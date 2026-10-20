@@ -38,11 +38,15 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
   const composer = useRef<HTMLTextAreaElement>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMemberId, setSelectedMemberId] = useState('')
+  const [studentSearch, setStudentSearch] = useState('')
   const [directoryStatus, setDirectoryStatus] = useState('Loading students...')
-  const member = members.find((member) => member.id === selectedMemberId) ?? members[0]
+  const member = members.find((member) => member.id === selectedMemberId)
+  const searchTerm = studentSearch.trim().toLocaleLowerCase()
+  const conversations = members.filter((item) => threads[item.id]?.length || item.id === selectedMemberId || drafts[item.id])
+    .sort((a, b) => (threads[b.id]?.at(-1)?.created_at ?? '').localeCompare(threads[a.id]?.at(-1)?.created_at ?? ''))
+  const searchResults = searchTerm ? members.filter((item) => item.full_name.toLocaleLowerCase().includes(searchTerm)) : []
   const messages = member ? threads[member.id] ?? [] : []
   const draft = member ? drafts[member.id] ?? '' : ''
-  const memberId = member?.id
 
   useEffect(() => {
     if (!isOpen) return
@@ -82,7 +86,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
 
   useEffect(() => {
     const client = supabase
-    if (!isOpen || !memberId || !client) return
+    if (!isOpen || !client) return
     let cancelled = false
     let loading = false
     let refreshAgain = false
@@ -95,7 +99,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
         for (let offset = 0; ; offset += 500) {
           const { data, error } = await client!.from('direct_messages')
             .select('id, sender_id, recipient_id, body, created_at')
-            .or(`and(sender_id.eq.${userId},recipient_id.eq.${memberId}),and(sender_id.eq.${memberId},recipient_id.eq.${userId})`)
+            .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
             .order('created_at').order('id').range(offset, offset + 499)
           if (cancelled) return
           if (error) throw error
@@ -103,9 +107,14 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
           if (!data || data.length < 500) break
         }
         setThreads((current) => {
-          const merged = new Map((current[memberId!] ?? []).map((message) => [message.id, message]))
-          history.forEach((message) => merged.set(message.id, message))
-          return { ...current, [memberId!]: [...merged.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) }
+          const next = { ...current }
+          history.forEach((message) => {
+            const partnerId = message.sender_id === userId ? message.recipient_id : message.sender_id
+            const merged = new Map((next[partnerId] ?? []).map((item) => [item.id, item]))
+            merged.set(message.id, message)
+            next[partnerId] = [...merged.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+          })
+          return next
         })
         setHistoryStatus('')
       } catch {
@@ -121,7 +130,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
         setLiveStatus('Connecting...')
       }
     })
-    const channel = client.channel(`messages:${userId}:${memberId}`)
+    const channel = client.channel(`messages:${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${userId}` }, () => { void refreshHistory() })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `sender_id=eq.${userId}` }, () => { void refreshHistory() })
       .subscribe((status) => {
@@ -139,7 +148,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
       window.removeEventListener('focus', onFocus)
       void client.removeChannel(channel)
     }
-  }, [isOpen, memberId, userId])
+  }, [isOpen, userId])
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -192,19 +201,25 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
         </header>
         <p className="messages-preview-note" role="status">{liveStatus}</p>
         {directoryStatus && <p className="chat-empty" role="status">{directoryStatus}</p>}
-        {member && <div className="messages-layout">
-          <aside className="conversation-list" aria-label="Registered students">
-            {members.map((item) => {
+        <div className="messages-layout">
+          <aside className="conversation-list" aria-label="Conversations">
+            <div className="student-search">
+              <label htmlFor="student-search">New message</label>
+              <input id="student-search" type="search" aria-label="Find a student" placeholder="Search students by name" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} />
+              {searchTerm && <p role="status">{directoryStatus || (searchResults.length ? 'Select a student to start a conversation.' : 'No students found.')}</p>}
+            </div>
+            {!searchTerm && !directoryStatus && conversations.length === 0 && <p className="chat-empty">No conversations yet. Search for a student to start a message.</p>}
+            {(searchTerm ? searchResults : conversations).map((item) => {
               const thread = threads[item.id] ?? []
               return (
-                <button key={item.id} className={`conversation-item ${item.id === member.id ? 'selected' : ''}`} type="button" aria-pressed={item.id === member.id} onClick={() => setSelectedMemberId(item.id)}>
+                <button key={item.id} className={`conversation-item ${item.id === member?.id ? 'selected' : ''}`} type="button" aria-pressed={item.id === member?.id} onClick={() => { setSelectedMemberId(item.id); setStudentSearch('') }}>
                   <span className="chat-avatar" aria-hidden="true">{item.full_name[0]}</span>
                   <span className="conversation-copy"><strong>{item.full_name}</strong><span>RPI student</span><small>{thread.at(-1)?.body ?? 'Start a pickup conversation'}</small></span>
                 </button>
               )
             })}
           </aside>
-          <section className="chat-thread" aria-label={`Conversation with ${member.full_name}`}>
+          {member ? <section className="chat-thread" aria-label={`Conversation with ${member.full_name}`}>
             <header className="chat-header"><span className="chat-avatar" aria-hidden="true">{member.full_name[0]}</span><div><h3>{member.full_name}</h3><p>Registered student · RPI campus</p></div></header>
             <div className="chat-history" role="log" aria-label="Message history" aria-live="polite" aria-relevant="additions">
               {historyStatus && <p role="status">{historyStatus}</p>}
@@ -230,8 +245,8 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
               </div>
               <p id="chat-keyboard-hint" className="chat-keyboard-hint">Enter to send · Shift+Enter for a new line</p>
             </form>
-          </section>
-        </div>}
+          </section> : <section className="chat-empty"><h3>Your messages</h3><p>Select a conversation or search for a student to start a new DM.</p>{historyStatus && <p role="status">{historyStatus}</p>}</section>}
+        </div>
       </div>
     </dialog>
   )

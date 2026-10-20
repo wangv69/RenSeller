@@ -211,6 +211,11 @@ Display names come from signup metadata and are not identity verification.
 
 Messages loads this directory each time it opens, excluding the current account.
 Loading failures and an empty directory never fall back to sample sellers.
+The inbox lists existing conversations, ordered by the latest message. To start
+a new DM, search for a registered student by name under **New message**, then
+select a result. Selecting a student opens the composer; it does not send a
+message. Drafts stay separate for each student. Incoming conversations appear
+automatically while Messages is open.
 The marketplace listings are still samples and have no real seller IDs, so their
 message buttons are disabled. The Messages navigation opens the actual directory.
 For saved conversations, also apply

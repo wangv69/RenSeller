@@ -32,7 +32,7 @@ These isolated containers copy source into temporary working directories, instal
 
 - App: listing rendering, search/category filters, favorites/details, creation, invalid prices, authentication requirement, insert failures, session/message navigation, missing configuration
 - Auth: sessions, sign-in, sign-up, RPI domain validation, metadata, duplicate accounts, password mismatches, reset email/redirects, expired recovery links, password updates, recovery events, network/service errors, sign-out, subscription cleanup
-- Messages: member directory, empty/error states, conversation isolation, suggestions, send/keyboard behavior, saved drafts, retry IDs, ambiguous insert confirmation, history errors, pagination, realtime callbacks, reconnect status, focus refresh, subscription cleanup
+- Messages: existing-conversation inbox, name search for registered students, no-match results, selecting a recipient without sending, incoming conversations and latest-message ordering, member directory empty/error states, conversation isolation, suggestions, send/keyboard behavior, saved drafts, retry IDs, ambiguous insert confirmation, history errors, pagination, realtime callbacks, reconnect status, focus refresh, subscription cleanup
 - Supabase client: configured and unconfigured initialization
 - Backend: all current routes, database success/failure, readiness, connection setup, authentication configuration, JWT failures and validation parameters, RPI email enforcement, profile fallback, JWKS caching
 

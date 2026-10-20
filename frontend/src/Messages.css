@@ -7,6 +7,10 @@
 .messages-preview-note { margin: 0; padding: 12px 24px; background: #fff0d8; color: #694511; font-size: 12px; line-height: 1.5; }
 .messages-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); flex: 1; min-height: 0; }
 .conversation-list { overflow-y: auto; border-right: 1px solid var(--line); background: white; }
+.student-search { padding: 16px; border-bottom: 1px solid var(--line); }
+.student-search label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.student-search input { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); font: inherit; font-size: 13px; }
+.student-search p { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .conversation-item { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-bottom: 1px solid var(--line); background: white; padding: 17px 16px; text-align: left; color: var(--ink); }
 .conversation-item:hover { background: #f4f4f2; }
 .conversation-item.selected { background: #fff0f2; box-shadow: inset 3px 0 var(--rpi-red); }
@@ -48,8 +52,8 @@
   .messages-heading { padding: 16px; }
   .messages-preview-note { padding: 10px 16px; }
   .messages-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .conversation-list { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
-  .conversation-item { width: 185px; flex: 0 0 185px; padding: 10px; border-bottom: 0; border-right: 1px solid var(--line); }
+  .conversation-list { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .conversation-item { padding: 10px; }
   .conversation-item img { width: 32px; height: 32px; }
   .conversation-copy small { display: none; }
   .chat-header { padding: 12px 16px; }
