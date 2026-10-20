@@ -3,13 +3,11 @@ A web application that lets RPI students sell and buy anything.
 
 ## Run with Docker
 
-Use Docker with the Compose plugin in WSL (Ubuntu). Make sure `docker info` and
-`docker compose version` succeed inside WSL first. From a WSL terminal, open
-this checkout:
-
-```sh
-cd /mnt/j/Code/Projects/RenSeller
-```
+Install Docker with the Compose plugin and make sure `docker info` and
+`docker compose version` succeed in your terminal. On Windows, you can use
+Docker Desktop with WSL integration. Open a terminal in your cloned repository's
+root directory (the folder containing `compose.yaml`). Run the commands below
+from that directory.
 
 Before building, copy `frontend/.env.example` to `frontend/.env.local` and set
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Compose mounts that file
