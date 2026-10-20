@@ -3,7 +3,11 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import './Auth.css'
 
-export default function Auth() {
+type AuthProps = {
+  onProfileOpen: () => void
+}
+
+export default function Auth({ onProfileOpen }: AuthProps) {
   const [showAuthForm, setShowAuthForm] = useState(false)
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [session, setSession] = useState<Session | null>(null)
@@ -93,7 +97,7 @@ export default function Auth() {
 
   return (
     <>
-{session ? <div className="profile-menu"><button className="profile-trigger" type="button" aria-haspopup="true"><span className="profile-avatar">{profileInitial}</span><span>{profileUsername}</span><span className="profile-chevron" aria-hidden="true">⌄</span></button><div className="profile-dropdown" role="menu"><button className="profile-menu-item" disabled type="button" role="menuitem">Profile coming soon</button><button className="profile-menu-item" type="button" onClick={signOut} role="menuitem">Sign out</button></div></div> : <button className="text-button" type="button" onClick={() => openAuthForm()}>Sign in</button>}
+{session ? <div className="profile-menu"><button className="profile-trigger" type="button" aria-haspopup="true"><span className="profile-avatar">{profileInitial}</span><span>{profileUsername}</span><span className="profile-chevron" aria-hidden="true">⌄</span></button><div className="profile-dropdown" role="menu"><button className="profile-menu-item" type="button" onClick={onProfileOpen} role="menuitem">View profile</button><button className="profile-menu-item" type="button" onClick={signOut} role="menuitem">Sign out</button></div></div> : <button className="text-button" type="button" onClick={() => openAuthForm()}>Sign in</button>}
 {showAuthForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAuthForm(false) }}><div className="sell-modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button className="modal-close" onClick={() => setShowAuthForm(false)} type="button" aria-label="Close">×</button><p className="eyebrow">RENSELLER ACCOUNT</p><h2 id="auth-title">{authMode === 'sign-in' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-copy">{authMode === 'sign-in' ? 'Sign in with your email and password.' : 'Create an account with your RPI email.'}</p><form onSubmit={submitAuth}>{authMode === 'sign-up' && <label>Full name<input required autoComplete="name" value={authFullName} onChange={(event) => setAuthFullName(event.target.value)} placeholder="Your full name" /></label>}<label>RPI email<input required autoComplete="email" type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="RCSID@rpi.edu" /></label><label>Password<input required autoComplete={authMode === 'sign-in' ? 'current-password' : 'new-password'} minLength={6} type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="At least 6 characters" /></label>{authMode === 'sign-up' && <label>Confirm password<input required autoComplete="new-password" minLength={6} type="password" value={authConfirmPassword} onChange={(event) => setAuthConfirmPassword(event.target.value)} placeholder="Re-enter your password" /></label>}{authMessage && <p className={`auth-message ${authMessageType}`} role="status">{authMessage}</p>}<div className="modal-actions"><button className="cancel-button" type="button" onClick={() => setAuthMode(authMode === 'sign-in' ? 'sign-up' : 'sign-in')}>{authMode === 'sign-in' ? 'Create account' : 'Sign in instead'}</button><button className="sell-button" disabled={authLoading} type="submit">{authLoading ? 'Working...' : authMode === 'sign-in' ? 'Sign in' : 'Sign up'} <span>→</span></button></div></form></div></div>}
     </>
   )

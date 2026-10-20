@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase'
 
 import './App.css'
 import Auth from './Auth'
+import Messages from './Messages'
+import Profile from './Profile'
 
 type Listing = {
   id: number
