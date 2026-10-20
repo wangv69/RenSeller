@@ -1,0 +1,35 @@
+services:
+  frontend-tests:
+    image: node:24-alpine
+    working_dir: /tmp/frontend
+    volumes:
+      - ./frontend:/source:ro
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p /tmp/frontend
+        cp /source/package.json /source/package-lock.json /source/tsconfig*.json /source/vite*.ts /source/eslint.config.js /source/index.html .
+        cp -r /source/src .
+        npm ci
+        npm run test:coverage
+        npm run lint
+        npm run build
+  backend-tests:
+    image: python:3.12-slim
+    working_dir: /tmp/project
+    environment:
+      PYTHONDONTWRITEBYTECODE: '1'
+    volumes:
+      - ./backend:/source/backend:ro
+      - ./pytest.ini:/source/pytest.ini:ro
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p backend
+        cp /source/pytest.ini .
+        cp /source/backend/requirements*.txt backend/
+        cp -r /source/backend/app /source/backend/tests backend/
+        pip install --no-cache-dir -r backend/requirements-dev.txt
+        python -m pytest

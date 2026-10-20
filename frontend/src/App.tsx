@@ -98,7 +98,7 @@ function App() {
   }
 
   const price = Number(newPrice.replace('$', ''))
-  if (!newTitle.trim() || Number.isNaN(price) || price < 0) {
+  if (!newTitle.trim() || !newPrice.replace('$', '').trim() || !Number.isFinite(price) || price < 0) {
     setFormError('Enter a title and a valid price.')
     return
   }
