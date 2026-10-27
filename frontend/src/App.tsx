@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import Messages from './Messages'
 import { supabase } from './lib/supabase'
@@ -23,17 +23,23 @@ type ListingRow = {
   price: number
   category: string
   condition: string
+  image_path:string | null
   profiles: { display_name: string } | null
 }
 
+const PLACEHOLDER_IMAGE = 'https://placehold.co/900x700?text=No+photo'
+
 function toListing(row: ListingRow): Listing {
+  const imageUrl = row.image_path && supabase
+    ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
+    : PLACEHOLDER_IMAGE
   return {
     id: row.id,
     title: row.name,
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
     category: row.category,
     condition: row.condition ?? 'Good condition',
-    image: 'https://placehold.co/900x700?text=No+photo',
+    image: imageUrl,
     seller: row.profiles?.display_name ?? 'RPI student',
   }
 }
@@ -60,6 +66,29 @@ function App() {
   const [newCondition, setNewCondition] = useState('Good condition')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [newImage, setNewImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+  useEffect(() => {
+  if (!newImage) { setImagePreview(null); return }
+  const url = URL.createObjectURL(newImage)
+  setImagePreview(url)
+  return () => URL.revokeObjectURL(url)
+  }, [newImage])
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+    if (file && !file.type.startsWith('image/')) {
+      setFormError('Please choose an image file.')
+      return
+    }
+    if (file && file.size > 5 * 1024 * 1024) {
+      setFormError('Image must be under 5 MB.')
+      return
+    }
+    setFormError(null)
+    setNewImage(file)
+  }
 
   useEffect(() => {
     async function loadListings() {
@@ -70,7 +99,7 @@ function App() {
       }
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition')
+        .select('id, name, price, category, condition, image_path')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
@@ -110,6 +139,20 @@ function App() {
   }
 
   setSaving(true)
+  let imagePath: string | null = null
+  if (newImage) {
+    const ext = newImage.name.split('.').pop()?.toLowerCase() || 'jpg'
+    imagePath = `${userData.user.id}/${crypto.randomUUID()}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from('listing-images')
+      .upload(imagePath, newImage, { contentType: newImage.type })
+    if (uploadError) {
+      setSaving(false)
+      setFormError(uploadError.message)
+      return
+    }
+  }
+
   const { data, error } = await supabase
     .from('listings')
     .insert({
@@ -118,12 +161,14 @@ function App() {
       category: newCategory,
       condition: newCondition,
       seller_id: userData.user.id,
+      image_path: imagePath,
     })
-    .select('id, name, price, category, condition')
+    .select('id, name, price, category, condition, image_path')
     .single()
   setSaving(false)
 
   if(error) {
+    if (imagePath) await supabase.storage.from('listing-images').remove([imagePath])
     setFormError(error.message)
     return
   }
@@ -131,6 +176,7 @@ function App() {
   setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
   setNewTitle('')
   setNewPrice('')
+  setNewImage(null)
   setShowSellForm(false)
   }
 
@@ -148,10 +194,6 @@ function App() {
             {session && <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>Messages</button>}
             <Auth onSessionChange={handleSessionChange} />
             <button className="sell-button" type="button" onClick={() => setShowSellForm(true)}>Sell an item <span>+</span></button>
-
-
-
-
 
           </nav>
         </div>
@@ -275,6 +317,12 @@ function App() {
             <p className="eyebrow">LIST SOMETHING NEW</p>
             <h2 id="sell-title">What are you selling?</h2>
             <p className="modal-copy">Add the basics now. You can fill in more details before posting.</p>
+            <label>Photo
+              <input type="file" accept="image/*" onChange={handleImageChange} />
+            </label>
+            {imagePreview && (
+              <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 8 }} />
+            )}
             <label>Item title
               <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="e.g. Mini fridge, desk lamp..." />
             </label>
