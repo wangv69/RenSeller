@@ -4,6 +4,7 @@ import Messages from './Messages'
 import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
+import Profile from './Profile'
 
 type Listing = {
   id: number
@@ -23,7 +24,7 @@ type ListingRow = {
   price: number
   category: string
   condition: string
-  image_path:string | null
+  image_path: string | null
   profiles: { display_name: string } | null
 }
 
@@ -59,6 +60,9 @@ function App() {
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState<'home' | 'profile'>(
+    window.location.hash === '#profile' ? 'profile' : 'home',
+  )
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
@@ -70,10 +74,10 @@ function App() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   useEffect(() => {
-  if (!newImage) { setImagePreview(null); return }
-  const url = URL.createObjectURL(newImage)
-  setImagePreview(url)
-  return () => URL.revokeObjectURL(url)
+    if (!newImage) { setImagePreview(null); return }
+    const url = URL.createObjectURL(newImage)
+    setImagePreview(url)
+    return () => URL.revokeObjectURL(url)
   }, [newImage])
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
@@ -109,10 +113,28 @@ function App() {
     loadListings()
   }, [])
 
+  useEffect(() => {
+    function handleHashChange() {
+      const hash = window.location.hash
+      setCurrentPage(hash === '#profile' ? 'profile' : 'home')
+    }
+
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  function openProfile() {
+    window.location.hash = 'profile'
+  }
+
+  function returnHome() {
+    window.location.hash = 'top'
+  }
+
   const visibleListings = listings.filter((listing) => {
-  const matchesCategory = activeCategory === 'All listings' || listing.category === activeCategory
-  const searchText = `${listing.title} ${listing.category}`.toLowerCase()
-  return matchesCategory && searchText.includes(search.toLowerCase())
+    const matchesCategory = activeCategory === 'All listings' || listing.category === activeCategory
+    const searchText = `${listing.title} ${listing.category}`.toLowerCase()
+    return matchesCategory && searchText.includes(search.toLowerCase())
   })
 
   function toggleFavorite(id: number) {
@@ -120,64 +142,64 @@ function App() {
   }
 
   async function handleCreateListing() {
-  setFormError(null)
-  if (!supabase) {
-    setFormError('Supabase is not configured.')
-    return
-  }
-
-  const price = Number(newPrice.replace('$', ''))
-  if (!newTitle.trim() || !newPrice.replace('$', '').trim() || !Number.isFinite(price) || price < 0) {
-    setFormError('Enter a title and a valid price.')
-    return
-  }
-
-  const { data: userData } = await supabase.auth.getUser()
-  if (!userData.user) {
-    setFormError('You need to sign in to post a listing.')
-    return
-  }
-
-  setSaving(true)
-  let imagePath: string | null = null
-  if (newImage) {
-    const ext = newImage.name.split('.').pop()?.toLowerCase() || 'jpg'
-    imagePath = `${userData.user.id}/${crypto.randomUUID()}.${ext}`
-    const { error: uploadError } = await supabase.storage
-      .from('listing-images')
-      .upload(imagePath, newImage, { contentType: newImage.type })
-    if (uploadError) {
-      setSaving(false)
-      setFormError(uploadError.message)
+    setFormError(null)
+    if (!supabase) {
+      setFormError('Supabase is not configured.')
       return
     }
-  }
 
-  const { data, error } = await supabase
-    .from('listings')
-    .insert({
-      name: newTitle.trim(),
-      price,
-      category: newCategory,
-      condition: newCondition,
-      seller_id: userData.user.id,
-      image_path: imagePath,
-    })
-    .select('id, name, price, category, condition, image_path')
-    .single()
-  setSaving(false)
+    const price = Number(newPrice.replace('$', ''))
+    if (!newTitle.trim() || !newPrice.replace('$', '').trim() || !Number.isFinite(price) || price < 0) {
+      setFormError('Enter a title and a valid price.')
+      return
+    }
 
-  if(error) {
-    if (imagePath) await supabase.storage.from('listing-images').remove([imagePath])
-    setFormError(error.message)
-    return
-  }
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData.user) {
+      setFormError('You need to sign in to post a listing.')
+      return
+    }
 
-  setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
-  setNewTitle('')
-  setNewPrice('')
-  setNewImage(null)
-  setShowSellForm(false)
+    setSaving(true)
+    let imagePath: string | null = null
+    if (newImage) {
+      const ext = newImage.name.split('.').pop()?.toLowerCase() || 'jpg'
+      imagePath = `${userData.user.id}/${crypto.randomUUID()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('listing-images')
+        .upload(imagePath, newImage, { contentType: newImage.type })
+      if (uploadError) {
+        setSaving(false)
+        setFormError(uploadError.message)
+        return
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('listings')
+      .insert({
+        name: newTitle.trim(),
+        price,
+        category: newCategory,
+        condition: newCondition,
+        seller_id: userData.user.id,
+        image_path: imagePath,
+      })
+      .select('id, name, price, category, condition, image_path')
+      .single()
+    setSaving(false)
+
+    if (error) {
+      if (imagePath) await supabase.storage.from('listing-images').remove([imagePath])
+      setFormError(error.message)
+      return
+    }
+
+    setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
+    setNewTitle('')
+    setNewPrice('')
+    setNewImage(null)
+    setShowSellForm(false)
   }
 
   function closeListingDetails() {
@@ -191,10 +213,17 @@ function App() {
           <a className="wordmark" href="#top" aria-label="RenSeller home"><span>REN</span>SELLER</a>
           <p className="campus-note">THE RPI STUDENT MARKETPLACE</p>
           <nav className="account-nav" aria-label="Account navigation">
-            {session && <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>Messages</button>}
-            <Auth onSessionChange={handleSessionChange} />
-            <button className="sell-button" type="button" onClick={() => setShowSellForm(true)}>Sell an item <span>+</span></button>
-
+            {session && (
+              <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>
+                Messages
+              </button>
+            )}
+            <Auth onSessionChange={handleSessionChange} onProfileOpen={openProfile} />
+            {session && (
+              <button className="sell-button" type="button" onClick={() => setShowSellForm(true)}>
+                Sell an item <span>+</span>
+              </button>
+            )}
           </nav>
         </div>
         <div className="search-row page-width">
@@ -204,104 +233,114 @@ function App() {
       </header>
 
       <main id="top">
-        <section className="welcome-band">
-          <div className="page-width welcome-content">
-            <div>
-              <p className="eyebrow">BUILT FOR CAMPUS LIFE</p>
-              <h1>Find your next <em>good thing.</em></h1>
-              <p className="welcome-copy">Buy, sell, and trade with people around you. No shipping, no strangers, no hassle.</p>
-              <div className="trust-row">
-                <span>✓ Student-first</span>
-                <span>✓ Local pickup</span>
-                <span>✓ No listing fees</span>
+        {currentPage === 'profile' ? (
+          <Profile
+            onBack={returnHome}
+            savedListings={listings.filter((listing) => favorites.includes(listing.id))}
+            onToggleSaved={toggleFavorite}
+          />
+        ) : (
+          <>
+            <section className="welcome-band">
+              <div className="page-width welcome-content">
+                <div>
+                  <p className="eyebrow">BUILT FOR CAMPUS LIFE</p>
+                  <h1>Find your next <em>good thing.</em></h1>
+                  <p className="welcome-copy">Buy, sell, and trade with people around you. No shipping, no strangers, no hassle.</p>
+                  <div className="trust-row">
+                    <span>✓ Student-first</span>
+                    <span>✓ Local pickup</span>
+                    <span>✓ No listing fees</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </section>
+            </section>
 
-                <section className="category-section page-width" aria-label="Browse campus categories">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">BROWSE RPI CAMPUS</p>
-              <h2>What are you looking for?</h2>
-            </div>
-            <button className="view-all" type="button">View all listings <span></span></button>
-          </div>
-          <div className="category-scroller">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                className={activeCategory === category ? 'category-chip active' : 'category-chip'}
-                onClick={() => setActiveCategory(category)}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        </section>
+            <section className="category-section page-width" aria-label="Browse campus categories">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">BROWSE RPI CAMPUS</p>
+                  <h2>What are you looking for?</h2>
+                </div>
+                <button className="view-all" type="button">View all listings <span></span></button>
+              </div>
+              <div className="category-scroller">
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    className={activeCategory === category ? 'category-chip active' : 'category-chip'}
+                    onClick={() => setActiveCategory(category)}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-        <section className="listings-section page-width">
-          <div className="listing-heading">
-            <div>
-              <h2>Freshly listed</h2>
-              <p>{visibleListings.length} items listed by RPI students</p>
-            </div>
-            <button className="filter-button" type="button">Filter <span></span></button>
-          </div>
+            <section className="listings-section page-width">
+              <div className="listing-heading">
+                <div>
+                  <h2>Freshly listed</h2>
+                  <p>{visibleListings.length} items listed by RPI students</p>
+                </div>
+                <button className="filter-button" type="button">Filter <span></span></button>
+              </div>
 
-          {loading ? (
-            <p>Loading…</p>
-          ) : error ? (
-            <p>{error}</p>
-          ) : visibleListings.length > 0 ? (
-            <div className="listing-grid">
-              {visibleListings.map((listing) => (
-                <article
-                  className="listing-card"
-                  key={listing.id}
-                  onClick={() => setSelectedListing(listing)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') setSelectedListing(listing)
-                  }}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <div className="listing-image-wrap">
-                    <img src={listing.image} alt={listing.title} />
-                    <button
-                      className={favorites.includes(listing.id) ? 'favorite-button saved' : 'favorite-button'}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        toggleFavorite(listing.id)
+              {loading ? (
+                <p>Loading…</p>
+              ) : error ? (
+                <p>{error}</p>
+              ) : visibleListings.length > 0 ? (
+                <div className="listing-grid">
+                  {visibleListings.map((listing) => (
+                    <article
+                      className="listing-card"
+                      key={listing.id}
+                      onClick={() => setSelectedListing(listing)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') setSelectedListing(listing)
                       }}
-                      type="button"
-                      aria-label={favorites.includes(listing.id) ? 'Remove from favorites' : 'Save listing'}
+                      role="button"
+                      tabIndex={0}
                     >
-                      {favorites.includes(listing.id) ? '♥' : '♡'}
-                    </button>
-                    <span className="condition-tag">{listing.condition}</span>
-                  </div>
-                  <div className="listing-details">
-                    <div className="price-line">
-                      <h3>{listing.title}</h3>
-                      <strong>{listing.price}</strong>
-                    </div>
-                    <p className="listing-meta">RPI campus <span>·</span> {listing.category}</p>
-                    <p className="seller-line">
-                      <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
-                    </p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>No listings found</strong>
-              <span>Try another search or category.</span>
-            </div>
-          )}
-        </section>
+                      <div className="listing-image-wrap">
+                        <img src={listing.image} alt={listing.title} />
+                        <button
+                          className={favorites.includes(listing.id) ? 'favorite-button saved' : 'favorite-button'}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            toggleFavorite(listing.id)
+                          }}
+                          type="button"
+                          aria-label={favorites.includes(listing.id) ? 'Remove from favorites' : 'Save listing'}
+                        >
+                          {favorites.includes(listing.id) ? '♥' : '♡'}
+                        </button>
+                        <span className="condition-tag">{listing.condition}</span>
+                      </div>
+                      <div className="listing-details">
+                        <div className="price-line">
+                          <h3>{listing.title}</h3>
+                          <strong>{listing.price}</strong>
+                        </div>
+                        <p className="listing-meta">RPI campus <span>·</span> {listing.category}</p>
+                        <p className="seller-line">
+                          <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <strong>No listings found</strong>
+                  <span>Try another search or category.</span>
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </main>
 
       {session && <Messages key={session.user.id} isOpen={showMessages} userId={session.user.id} onClose={() => setShowMessages(false)} />}
