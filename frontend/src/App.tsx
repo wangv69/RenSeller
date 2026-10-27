@@ -3,7 +3,6 @@ import { supabase } from './lib/supabase'
 
 import './App.css'
 import Auth from './Auth'
-import Messages from './Messages'
 import Profile from './Profile'
 
 type Listing = {
@@ -48,6 +47,9 @@ function App() {
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState<'home' | 'profile'>(
+    window.location.hash === '#profile' ? 'profile' : 'home',
+  )
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
@@ -58,6 +60,12 @@ function App() {
 
   useEffect(() => {
     async function loadListings() {
+      if (!supabase) {
+        setError('Add your Supabase variables to frontend/.env.local to load listings.')
+        setLoading(false)
+        return
+      }
+
       const { data, error } = await supabase
         .from('listings')
         .select('id, name, price, category, condition')
@@ -69,6 +77,24 @@ function App() {
     }
     loadListings()
   }, [])
+
+  useEffect(() => {
+    function handleHashChange() {
+      const hash = window.location.hash
+      setCurrentPage(hash === '#profile' ? 'profile' : 'home')
+    }
+
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  function openProfile() {
+    window.location.hash = 'profile'
+  }
+
+  function returnHome() {
+    window.location.hash = 'top'
+  }
 
   const visibleListings = listings.filter((listing) => {
   const matchesCategory = activeCategory === 'All listings' || listing.category === activeCategory
@@ -86,6 +112,11 @@ function App() {
   const price = Number(newPrice.replace('$', ''))
   if (!newTitle.trim() || Number.isNaN(price) || price < 0) {
     setFormError('Enter a title and a valid price.')
+    return
+  }
+
+  if (!supabase) {
+    setFormError('Add your Supabase variables to frontend/.env.local first.')
     return
   }
 
@@ -131,8 +162,7 @@ function App() {
           <a className="wordmark" href="#top" aria-label="RenSeller home"><span>REN</span>SELLER</a>
           <p className="campus-note">THE RPI STUDENT MARKETPLACE</p>
           <nav className="account-nav" aria-label="Account navigation">
-            <button className="text-button" type="button">Messages</button>
-            <Auth />
+            <Auth onProfileOpen={openProfile} />
 
 
 
@@ -153,6 +183,14 @@ function App() {
       </header>
 
       <main id="top">
+        {currentPage === 'profile' ? (
+          <Profile
+            onBack={returnHome}
+            savedListings={listings.filter((listing) => favorites.includes(listing.id))}
+            onToggleSaved={toggleFavorite}
+          />
+        ) : (
+          <>
         <section className="welcome-band">
           <div className="page-width welcome-content">
             <div>
@@ -251,6 +289,8 @@ function App() {
             </div>
           )}
         </section>
+          </>
+        )}
       </main>
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
