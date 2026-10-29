@@ -14,7 +14,7 @@ it('explains unavailable listings and prevents posting without configuration', a
   expect(screen.getByRole('alert')).toHaveTextContent('Supabase is not configured.')
 })
 it('explains missing authentication configuration', () => {
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
   expect(screen.getByRole('status')).toHaveTextContent('Add your Supabase variables')
