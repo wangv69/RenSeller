@@ -13,7 +13,10 @@ type Listing = {
   image: string
   condition: string
   seller: string
+  sellerId: string
 }
+
+const listingImageFallback = 'https://placehold.co/900x700?text=No+photo'
 
 const categories = ['All listings', 'Textbooks', 'Electronics', 'Furniture', 'Clothing', 'Tickets']
 
@@ -23,6 +26,8 @@ type ListingRow = {
   price: number
   category: string
   condition: string
+  seller_id: string
+  image_url: string | null
   profiles: { display_name: string } | null
 }
 
@@ -33,8 +38,9 @@ function toListing(row: ListingRow): Listing {
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
     category: row.category,
     condition: row.condition ?? 'Good condition',
-    image: 'https://placehold.co/900x700?text=No+photo',
+    image: row.image_url || listingImageFallback,
     seller: row.profiles?.display_name ?? 'RPI student',
+    sellerId: row.seller_id,
   }
 }
 
@@ -45,6 +51,7 @@ function App() {
   const [showSellForm, setShowSellForm] = useState(false)
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
   const [listings, setListings] = useState<Listing[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState<'home' | 'profile'>(
@@ -55,6 +62,7 @@ function App() {
   const [newPrice, setNewPrice] = useState('')
   const [newCategory, setNewCategory] = useState('Textbooks')
   const [newCondition, setNewCondition] = useState('Good condition')
+  const [newImage, setNewImage] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -66,13 +74,25 @@ function App() {
         return
       }
 
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData.user?.id ?? null
+      setCurrentUserId(userId)
+
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition')
+        .select('id, name, price, category, condition, seller_id, image_url')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
       else setListings((data as unknown as ListingRow[]).map(toListing))
+      if (userId) {
+        const { data: favoriteRows, error: favoritesError } = await supabase
+          .from('listing_favorites')
+          .select('listing_id')
+          .eq('user_id', userId)
+        if (favoritesError) setError(favoritesError.message)
+        else setFavorites((favoriteRows ?? []).map((favorite) => favorite.listing_id))
+      }
       setLoading(false)
     }
     loadListings()
@@ -102,8 +122,21 @@ function App() {
   return matchesCategory && searchText.includes(search.toLowerCase())
   })
 
-  function toggleFavorite(id: number) {
-    setFavorites((current) => current.includes(id) ? current.filter((favoriteId) => favoriteId !== id) : [...current, id])
+  async function toggleFavorite(id: number) {
+    if (!supabase || !currentUserId) {
+      setError('You need to sign in to save listings.')
+      return
+    }
+
+    const isSaved = favorites.includes(id)
+    setFavorites((current) => isSaved ? current.filter((favoriteId) => favoriteId !== id) : [...current, id])
+    const result = isSaved
+      ? await supabase.from('listing_favorites').delete().eq('user_id', currentUserId).eq('listing_id', id)
+      : await supabase.from('listing_favorites').insert({ user_id: currentUserId, listing_id: id })
+    if (result.error) {
+      setFavorites((current) => isSaved ? [...current, id] : current.filter((favoriteId) => favoriteId !== id))
+      setError(result.error.message)
+    }
   }
   
   async function handleCreateListing() {
@@ -127,6 +160,29 @@ function App() {
   }
 
   setSaving(true)
+  let imageUrl: string | null = null
+  if (newImage) {
+    if (!newImage.type.startsWith('image/')) {
+      setSaving(false)
+      setFormError('Choose an image file.')
+      return
+    }
+    if (newImage.size > 5 * 1024 * 1024) {
+      setSaving(false)
+      setFormError('Listing images must be smaller than 5 MB.')
+      return
+    }
+    const extension = newImage.name.includes('.') ? newImage.name.slice(newImage.name.lastIndexOf('.')) : ''
+    const filePath = `${userData.user.id}/listing-${Date.now()}${extension}`
+    const { error: uploadError } = await supabase.storage.from('listing-images').upload(filePath, newImage, { upsert: false })
+    if (uploadError) {
+      setSaving(false)
+      setFormError(uploadError.message)
+      return
+    }
+    imageUrl = supabase.storage.from('listing-images').getPublicUrl(filePath).data.publicUrl
+  }
+
   const { data, error } = await supabase
     .from('listings')
     .insert({
@@ -135,8 +191,9 @@ function App() {
       category: newCategory,
       condition: newCondition,
       seller_id: userData.user.id,
+      image_url: imageUrl,
     })
-    .select('id, name, price, category, condition')
+    .select('id, name, price, category, condition, seller_id, image_url')
     .single()
   setSaving(false)
 
@@ -148,6 +205,7 @@ function App() {
   setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
   setNewTitle('')
   setNewPrice('')
+  setNewImage(null)
   setShowSellForm(false)
   }
 
@@ -187,6 +245,7 @@ function App() {
           <Profile
             onBack={returnHome}
             savedListings={listings.filter((listing) => favorites.includes(listing.id))}
+            postedListings={listings.filter((listing) => listing.sellerId === currentUserId)}
             onToggleSaved={toggleFavorite}
           />
         ) : (
@@ -322,6 +381,9 @@ function App() {
                 <option>Good condition</option>
                 <option>Fair</option>
               </select>
+            </label>
+            <label>Listing image
+              <input type="file" accept="image/*" onChange={(event) => setNewImage(event.target.files?.[0] ?? null)} />
             </label>
             {formError && <p role="alert">{formError}</p>}
             <div className="modal-actions">
