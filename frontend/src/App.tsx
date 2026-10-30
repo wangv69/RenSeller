@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
+ import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import Messages from './Messages'
 import { supabase } from './lib/supabase'
@@ -71,14 +71,13 @@ function App() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [newImage, setNewImage] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+  const imagePreview = useMemo(() => (newImage ? URL.createObjectURL(newImage) : null), [newImage])
 
   useEffect(() => {
-    if (!newImage) { setImagePreview(null); return }
-    const url = URL.createObjectURL(newImage)
-    setImagePreview(url)
-    return () => URL.revokeObjectURL(url)
-  }, [newImage])
+  if (!imagePreview) return
+    return () => URL.revokeObjectURL(imagePreview)
+  }, [imagePreview])
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
