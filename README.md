@@ -1,5 +1,17 @@
 # RenSeller
-A web application that lets RPI students sell and buy anything.
+A web application that lets RPI students buy and sell affordable,
+campus-appropriate items from verified members of the RPI community.
+
+RenSeller focuses on local, on-campus exchanges for textbooks, clothing,
+electronics, dorm supplies, furniture, and similar items. The semester MVP
+includes RPI email accounts, listing creation and discovery, buyer/seller
+messaging, and basic reporting and moderation. An AI-powered recommendation
+system is an optional stretch goal after the core marketplace is reliable.
+
+See the [product requirements](docs/PRODUCT_REQUIREMENTS.md) for the product
+scope and semester goals, and the [architecture overview](docs/ARCHITECTURE.md)
+for the current and planned system design. Track implementation status in the
+[feature checklist](docs/feature_checklist.md).
 
 ## Run with Docker
 
@@ -153,6 +165,8 @@ Create a .env.local file that contains the contents in .env.example
 and replace with proper url and key.
 
 For authentication, enable Email authentication in Supabase. Supabase will send a verification email after sign-up; set the local redirect URL to `http://localhost:5173/` under Authentication settings. Sign-up accepts only `@rpi.edu` addresses and automatically derives the username from the email prefix.
+
+The profile page uploads pictures to a public Supabase Storage bucket named `avatars`. Create that bucket under Storage before testing profile picture changes. Email changes also require confirmation through the new email address.
 
 
 ### Useful frontend commands

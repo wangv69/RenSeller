@@ -18,7 +18,7 @@ beforeEach(() => {
   }
 })
 async function open(signup = false) {
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   if (signup) fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
   await waitFor(() => expect(auth.getSession).toHaveBeenCalled())
@@ -81,14 +81,14 @@ it('requests a recovery link with the correct redirect', async () => {
 })
 it('blocks expired recovery links', async () => {
   window.history.replaceState(null, '', '/?recovery=1')
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   expect(await screen.findByRole('status')).toHaveTextContent('invalid or expired')
   expect(screen.getByRole('button', { name: /Update password/ })).toBeDisabled()
 })
 it('updates a password for a valid recovery session', async () => {
   window.history.replaceState(null, '', '/?recovery=1')
   auth.getSession.mockResolvedValue({ data: { session }, error: null })
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   await waitFor(() => expect(screen.getByRole('button', { name: /Update password/ })).toBeEnabled())
   fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'newsecret' } })
   fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'newsecret' } }); submit()
@@ -97,7 +97,7 @@ it('updates a password for a valid recovery session', async () => {
 })
 it('signs out and unsubscribes on unmount', async () => {
   auth.getSession.mockResolvedValue({ data: { session }, error: null })
-  const view = render(<Auth onSessionChange={vi.fn()} />)
+  const view = render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Sign out' }))
   await waitFor(() => expect(auth.signOut).toHaveBeenCalled())
   expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument()
@@ -105,7 +105,7 @@ it('signs out and unsubscribes on unmount', async () => {
 })
 it('handles a recovery event without exposing the session to the app', async () => {
   const onSessionChange = vi.fn()
-  render(<Auth onSessionChange={onSessionChange} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={onSessionChange} />)
   await waitFor(() => expect(auth.onAuthStateChange).toHaveBeenCalled())
   act(() => auth.onAuthStateChange.mock.calls[0][0]('PASSWORD_RECOVERY', session))
   expect(screen.getByRole('dialog')).toHaveAccessibleName('Set a new password')
@@ -115,7 +115,7 @@ it('reports password update failures', async () => {
   window.history.replaceState(null, '', '/?recovery=1')
   auth.getSession.mockResolvedValue({ data: { session }, error: null })
   auth.updateUser.mockResolvedValue({ error: { message: 'Password rejected' } })
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   await waitFor(() => expect(screen.getByRole('button', { name: /Update password/ })).toBeEnabled())
   fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'newsecret' } })
   fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'newsecret' } }); submit()

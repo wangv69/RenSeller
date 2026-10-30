@@ -12,9 +12,10 @@ function isRecoveryLink() {
 
 type AuthProps = {
   onSessionChange: (session: Session | null) => void
+  onProfileOpen: () => void
 }
 
-export default function Auth({ onSessionChange }: AuthProps) {
+export default function Auth({ onSessionChange, onProfileOpen }: AuthProps) {
   const recovering = useRef(isRecoveryLink())
   const [showAuthForm, setShowAuthForm] = useState(isRecoveryLink)
   const [authMode, setAuthMode] = useState<AuthMode>(() => isRecoveryLink() ? 'reset-password' : 'sign-in')
@@ -212,7 +213,7 @@ export default function Auth({ onSessionChange }: AuthProps) {
 
   return (
     <>
-{session ? <div className="profile-menu"><button className="profile-trigger" type="button" aria-haspopup="true"><span className="profile-avatar">{profileInitial}</span><span>{profileUsername}</span><span className="profile-chevron" aria-hidden="true">⌄</span></button><div className="profile-dropdown" role="menu"><button className="profile-menu-item" disabled type="button" role="menuitem">Profile coming soon</button><button className="profile-menu-item" type="button" onClick={signOut} role="menuitem">Sign out</button></div></div> : <button className="text-button" type="button" onClick={() => openAuthForm()}>Sign in</button>}
+{session ? <div className="profile-menu"><button className="profile-trigger" type="button" aria-haspopup="true"><span className="profile-avatar">{profileInitial}</span><span>{profileUsername}</span><span className="profile-chevron" aria-hidden="true">⌄</span></button><div className="profile-dropdown" role="menu"><button className="profile-menu-item" type="button" onClick={onProfileOpen} role="menuitem">View profile</button><button className="profile-menu-item" type="button" onClick={signOut} role="menuitem">Sign out</button></div></div> : <button className="text-button" type="button" onClick={() => openAuthForm()}>Sign in</button>}
       {showAuthForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !authLoading) setShowAuthForm(false)

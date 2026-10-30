@@ -6,15 +6,13 @@ import Messages from './Messages'
 
 vi.mock('./lib/supabase', () => ({ supabase: null }))
 
-it('explains unavailable listings and prevents posting without configuration', async () => {
+it('explains unavailable listings and hides selling without configuration', async () => {
   render(<App />)
   expect(await screen.findByText('Listings are unavailable. Supabase is not configured.')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
-  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
-  expect(screen.getByRole('alert')).toHaveTextContent('Supabase is not configured.')
+  expect(screen.queryByRole('button', { name: /Sell an item/ })).not.toBeInTheDocument()
 })
 it('explains missing authentication configuration', () => {
-  render(<Auth onSessionChange={vi.fn()} />)
+  render(<Auth onProfileOpen={vi.fn()} onSessionChange={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
   expect(screen.getByRole('status')).toHaveTextContent('Add your Supabase variables')

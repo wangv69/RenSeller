@@ -3,7 +3,7 @@
 .profile-trigger:hover, .profile-menu:focus-within .profile-trigger { color: var(--rpi-red); }
 .profile-avatar { align-items: center; background: var(--rpi-red); color: white; display: inline-flex; font-size: 12px; height: 28px; justify-content: center; width: 28px; }
 .profile-chevron { font-size: 17px; line-height: 1; }
-.profile-dropdown { background: white; border: 1px solid var(--line); box-shadow: 0 10px 24px #0002; display: none; min-width: 165px; padding: 6px 0; position: absolute; right: 0; top: calc(100% + 4px); z-index: 4; }
+.profile-dropdown { background: white; border: 1px solid var(--line); box-shadow: 0 10px 24px #0002; display: none; min-width: 165px; padding: 6px 0; position: absolute; right: 0; top: 100%; z-index: 4; }
 .profile-menu:hover .profile-dropdown, .profile-menu:focus-within .profile-dropdown { display: block; }
 .profile-menu-item { background: transparent; border: 0; color: var(--ink); display: block; font-family: 'Roboto Condensed', sans-serif; font-size: 12px; padding: 10px 14px; text-align: left; text-transform: uppercase; width: 100%; }
 .profile-menu-item:hover:not(:disabled) { background: #f1f1f0; color: var(--rpi-red); }
