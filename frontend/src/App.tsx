@@ -27,7 +27,7 @@ type ListingRow = {
   category: string
   condition: string
   image_path: string | null
-  profiles: { display_name: string } | null
+  sellerName?: string
 }
 
 const PLACEHOLDER_IMAGE = 'https://placehold.co/900x700?text=No+photo'
@@ -44,7 +44,7 @@ function toListing(row: ListingRow): Listing {
     category: row.category,
     condition: row.condition ?? 'Good condition',
     image: imageUrl,
-    seller: row.profiles?.display_name ?? 'RPI student',
+    seller: row.sellerName?.trim() || 'RPI student',
   }
 }
 
@@ -109,8 +109,22 @@ function App() {
         .select('id, name, price, category, condition, image_path, seller_id')
         .order('id', { ascending: false })
 
-      if (error) setError(error.message)
-      else setListings((data as unknown as ListingRow[]).map(toListing))
+      if (error) {
+        setError(error.message)
+      } else {
+        const rows = data as unknown as ListingRow[]
+        const sellerIds = [...new Set(rows.map((row) => row.seller_id))]
+        const { data: members, error: membersError } = await supabase
+          .from('messaging_members')
+          .select('id, full_name')
+          .in('id', sellerIds)
+        if (membersError) {
+          setError(membersError.message)
+        } else {
+          const sellerNames = new Map((members ?? []).map((member) => [member.id, member.full_name]))
+          setListings(rows.map((row) => toListing({ ...row, sellerName: sellerNames.get(row.seller_id) })))
+        }
+      }
       setLoading(false)
     }
     loadListings()
@@ -188,7 +202,7 @@ function App() {
         seller_id: userData.user.id,
         image_path: imagePath,
       })
-      .select('id, name, price, category, condition, image_path')
+      .select('id, name, price, category, condition, image_path, seller_id')
       .single()
     setSaving(false)
 
@@ -200,7 +214,7 @@ function App() {
       return
     }
 
-    setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
+    setListings((current) => [toListing(data as ListingRow), ...current])
     setNewTitle('')
     setNewPrice('')
     setNewImage(null)

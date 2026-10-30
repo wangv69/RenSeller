@@ -230,8 +230,9 @@ a new DM, search for a registered student by name under **New message**, then
 select a result. Selecting a student opens the composer; it does not send a
 message. Drafts stay separate for each student. Incoming conversations appear
 automatically while Messages is open.
-The marketplace listings are still samples and have no real seller IDs, so their
-message buttons are disabled. The Messages navigation opens the actual directory.
+Listings include their seller IDs. When a listing is opened while signed in,
+**Message seller** opens that seller's conversation directly. Listings whose
+directory record is missing display `RPI student` as a fallback.
 For saved conversations, also apply
 `supabase/migrations/202610160002_direct_messages.sql` once, after the directory
 migration. It adds the messages table, participant-only read access, sender and

@@ -13,18 +13,28 @@ vi.mock('./Auth', () => ({ default: function TestAuth({ onSessionChange }: { onS
 } }))
 vi.mock('./Messages', () => ({ default: ({ isOpen, onClose, initialMemberId }: { isOpen: boolean, onClose: () => void, initialMemberId?: string }) => isOpen ? <><span>Contacting {initialMemberId}</span><button onClick={onClose}>Test close messages</button></> : null }))
 const rows = [
-  { id: 1, name: 'Calculus book', price: 12, category: 'Textbooks', condition: 'New', seller_id: 'seller-1', profiles: null },
-  { id: 2, name: 'Desk lamp', price: 5.5, category: 'Electronics', condition: null, seller_id: 'seller-2', profiles: { display_name: 'Test seller' } },
+  { id: 1, name: 'Calculus book', price: 12, category: 'Textbooks', condition: 'New', seller_id: 'seller-1' },
+  { id: 2, name: 'Desk lamp', price: 5.5, category: 'Electronics', condition: null, seller_id: 'seller-2' },
+]
+const members = [
+  { id: 'seller-1', full_name: 'Calculus Seller' },
+  { id: 'seller-2', full_name: 'Lamp Seller' },
 ]
 beforeEach(() => {
   vi.resetAllMocks()
-  client.from.mockReturnValue(query({ data: rows, error: null }))
+  client.from.mockImplementation((table: string) => query({ data: table === 'messaging_members' ? members : rows, error: null }))
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'self' } } })
   client.storage.from.mockReturnValue(bucket)
   bucket.upload.mockResolvedValue({ error: null })
   bucket.remove.mockResolvedValue({ error: null })
   bucket.getPublicUrl.mockImplementation((path: string) => ({ data: { publicUrl: `https://cdn.test/${path}` } }))
   vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn().mockReturnValue('blob:preview'), revokeObjectURL: vi.fn() }))
+})
+it('shows each listing username instead of the generic student label', async () => {
+  await start()
+  expect(screen.getByText('Listed by Calculus Seller')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Calculus book'))
+  expect(within(screen.getByRole('dialog')).getByText(/Listed by Calculus Seller/)).toBeInTheDocument()
 })
 afterEach(() => vi.unstubAllGlobals())
 async function start() { render(<App />); await screen.findByText('Calculus book') }
@@ -119,7 +129,7 @@ it('preserves the listing form after a failed insert', async () => {
 const photo = () => new File(['x'], 'lamp.png', { type: 'image/png' })
 function choosePhoto(file = photo()) { fireEvent.change(screen.getByLabelText('Photo'), { target: { files: [file] } }) }
 it('shows a listing photo from storage and a placeholder when there is none', async () => {
-  client.from.mockReturnValue(query({ data: [{ ...rows[0], image_path: 'seller/book.png' }, rows[1]], error: null }))
+  client.from.mockImplementation((table: string) => query({ data: table === 'messaging_members' ? members : [{ ...rows[0], image_path: 'seller/book.png' }, rows[1]], error: null }))
   await start()
   expect(screen.getByAltText('Calculus book')).toHaveAttribute('src', 'https://cdn.test/seller/book.png')
   expect(screen.getByAltText('Desk lamp')).toHaveAttribute('src', expect.stringContaining('placehold.co'))
