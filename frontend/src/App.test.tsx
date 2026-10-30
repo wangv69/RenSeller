@@ -99,7 +99,7 @@ it('creates a listing and adds the persisted result to the grid', async () => {
   client.from.mockReturnValue(insert)
   fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
   expect(await screen.findByText('New book')).toBeInTheDocument()
-  expect(insert.insert).toHaveBeenCalledWith({ name: 'New book', price: 15, category: 'Textbooks', condition: 'Good condition', seller_id: 'self' })
+  expect(insert.insert).toHaveBeenCalledWith({ name: 'New book', price: 15, category: 'Textbooks', condition: 'Good condition', seller_id: 'self', image_path: null })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 it('preserves the listing form after a failed insert', async () => {

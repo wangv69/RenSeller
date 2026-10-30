@@ -82,8 +82,8 @@ function App() {
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
-    if (file && !file.type.startsWith('image/')) {
-      setFormError('Please choose an image file.')
+    if (file && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setFormError('Please choose a JPEG, PNG, or WebP image.')
       return
     }
     if (file && file.size > 5 * 1024 * 1024) {
@@ -167,7 +167,7 @@ function App() {
       imagePath = `${userData.user.id}/${crypto.randomUUID()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('listing-images')
-        .upload(imagePath, newImage, { contentType: newImage.type })
+        .upload(imagePath, newImage, { contentType: newImage.type, upsert: false })
       if (uploadError) {
         setSaving(false)
         setFormError(uploadError.message)
@@ -190,8 +190,10 @@ function App() {
     setSaving(false)
 
     if (error) {
-      if (imagePath) await supabase.storage.from('listing-images').remove([imagePath])
       setFormError(error.message)
+      if (imagePath) {
+        await supabase.storage.from('listing-images').remove([imagePath]).catch(() => {})
+      }
       return
     }
 
