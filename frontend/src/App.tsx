@@ -8,6 +8,7 @@ import Profile from './Profile'
 
 type Listing = {
   id: number
+  sellerId: string
   title: string
   price: string
   category: string
@@ -20,6 +21,7 @@ const categories = ['All listings', 'Textbooks', 'Electronics', 'Furniture', 'Cl
 
 type ListingRow = {
   id: number
+  seller_id: string
   name: string
   price: number
   category: string
@@ -36,6 +38,7 @@ function toListing(row: ListingRow): Listing {
     : PLACEHOLDER_IMAGE
   return {
     id: row.id,
+    sellerId: row.seller_id,
     title: row.name,
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
     category: row.category,
@@ -48,6 +51,7 @@ function toListing(row: ListingRow): Listing {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [showMessages, setShowMessages] = useState(false)
+  const [messageRecipientId, setMessageRecipientId] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState('All listings')
   const [search, setSearch] = useState('')
   const [favorites, setFavorites] = useState<number[]>([])
@@ -102,7 +106,7 @@ function App() {
       }
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition, image_path')
+        .select('id, name, price, category, condition, image_path, seller_id')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
@@ -344,11 +348,11 @@ function App() {
         )}
       </main>
 
-      {session && <Messages key={session.user.id} isOpen={showMessages} userId={session.user.id} onClose={() => setShowMessages(false)} />}
+      {session && <Messages key={session.user.id} isOpen={showMessages} userId={session.user.id} initialMemberId={messageRecipientId} onClose={() => { setShowMessages(false); setMessageRecipientId(null) }} />}
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
 
-      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button></div></div></div></div>}
+      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button" onClick={() => { if (!session) return; setSelectedListing(null); setMessageRecipientId(selectedListing.sellerId); setShowMessages(true) }} disabled={!session} title={session ? 'Open your conversation with this seller' : 'Sign in to contact this seller'}>Message seller <span>→</span></button></div></div></div></div>}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>

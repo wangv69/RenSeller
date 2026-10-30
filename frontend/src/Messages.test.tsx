@@ -34,6 +34,10 @@ it('loads the directory excluding the current student and cleans up subscription
   view.unmount()
   expect(client.removeChannel).toHaveBeenCalledWith(channel)
 })
+it('opens the requested seller conversation when provided', async () => {
+  render(<Messages isOpen userId="self" initialMemberId="other" onClose={vi.fn()} />)
+  expect(await screen.findByRole('region', { name: 'Conversation with Test Student A' })).toBeInTheDocument()
+})
 it('shows an empty directory', async () => {
   directory = query({ data: [], error: null })
   render(<Messages isOpen userId="self" onClose={vi.fn()} />)

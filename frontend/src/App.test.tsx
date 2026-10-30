@@ -11,10 +11,10 @@ vi.mock('./Auth', () => ({ default: function TestAuth({ onSessionChange }: { onS
   useEffect(() => { onSessionChange(session) }, [onSessionChange])
   return <button onClick={() => onSessionChange(null)}>Test sign out</button>
 } }))
-vi.mock('./Messages', () => ({ default: ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => isOpen ? <button onClick={onClose}>Test close messages</button> : null }))
+vi.mock('./Messages', () => ({ default: ({ isOpen, onClose, initialMemberId }: { isOpen: boolean, onClose: () => void, initialMemberId?: string }) => isOpen ? <><span>Contacting {initialMemberId}</span><button onClick={onClose}>Test close messages</button></> : null }))
 const rows = [
-  { id: 1, name: 'Calculus book', price: 12, category: 'Textbooks', condition: 'New', profiles: null },
-  { id: 2, name: 'Desk lamp', price: 5.5, category: 'Electronics', condition: null, profiles: { display_name: 'Test seller' } },
+  { id: 1, name: 'Calculus book', price: 12, category: 'Textbooks', condition: 'New', seller_id: 'seller-1', profiles: null },
+  { id: 2, name: 'Desk lamp', price: 5.5, category: 'Electronics', condition: null, seller_id: 'seller-2', profiles: { display_name: 'Test seller' } },
 ]
 beforeEach(() => {
   vi.resetAllMocks()
@@ -53,9 +53,15 @@ it('toggles favorites without opening details and supports keyboard details', as
   fireEvent.click(screen.getByRole('button', { name: 'Remove from favorites' }))
   fireEvent.keyDown(screen.getByText('Calculus book').closest('article')!, { key: 'Enter' })
   expect(screen.getByRole('dialog')).toHaveAccessibleName('Calculus book')
-  expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Message seller/ })).toBeDisabled()
+  expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Message seller/ })).toBeEnabled()
   fireEvent.click(screen.getByRole('button', { name: 'Close listing details' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+it('opens a direct message conversation with the listing seller', async () => {
+  await start()
+  fireEvent.click(screen.getByText('Calculus book'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Message seller/ }))
+  expect(await screen.findByText('Contacting seller-1')).toBeInTheDocument()
 })
 it('shows listing service errors', async () => {
   client.from.mockReturnValue(query({ data: null, error: { message: 'Listing service offline' } }))

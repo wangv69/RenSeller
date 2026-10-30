@@ -19,12 +19,13 @@ type Message = {
 type MessagesProps = {
   isOpen: boolean
   userId: string
+  initialMemberId?: string | null
   onClose: () => void
 }
 
 const suggestions = ['Is this still available?', 'Where on campus can we meet?', 'What time works for pickup?']
 
-export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
+export default function Messages({ isOpen, userId, initialMemberId, onClose }: MessagesProps) {
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
   const pendingSends = useRef(new Map<string, string>())
@@ -64,6 +65,10 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
         if (cancelled) return
         if (error) throw error
         setMembers(data ?? [])
+        if (initialMemberId && data?.some((item) => item.id === initialMemberId)) {
+          setSelectedMemberId(initialMemberId)
+          setStudentSearch('')
+        }
         setDirectoryStatus(data?.length ? '' : 'No other confirmed RPI students have joined yet.')
       } catch {
         if (!cancelled) setDirectoryStatus('Unable to load students. Please try reopening Messages. The Supabase student directory must be configured.')
@@ -71,7 +76,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
     }
     void loadMembers()
     return () => { cancelled = true }
-  }, [isOpen, userId])
+  }, [initialMemberId, isOpen, userId])
 
   useEffect(() => {
     const element = dialog.current
