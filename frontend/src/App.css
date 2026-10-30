@@ -19,7 +19,6 @@
 .account-nav { align-items: center; display: flex; gap: 23px; margin-left: auto; }
 .text-button, .view-all { background: none; border: 0; color: var(--ink); font-family: 'Roboto Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .5px; padding: 7px 0; text-transform: uppercase; }
 .text-button:hover, .view-all:hover { color: var(--rpi-red); }
-.messages-nav-button span { background: var(--rpi-red); border-radius: 50%; color: white; display: inline-flex; font-size: 10px; height: 16px; align-items: center; justify-content: center; margin-left: 4px; width: 16px; }
 .sell-button { background: var(--rpi-red); border: 0; border-radius: 0; color: white; font-family: 'Roboto Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .5px; padding: 12px 17px; text-transform: uppercase; }
 .sell-button:hover { background: var(--rpi-red-dark); }
 .sell-button span { font-size: 17px; line-height: 0; margin-left: 7px; vertical-align: -1px; }
