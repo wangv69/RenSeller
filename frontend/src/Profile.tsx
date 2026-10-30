@@ -23,7 +23,7 @@ type Feedback = {
   type: 'error' | 'success'
 }
 
-const dormOptions = ['North Hall', 'Bray Hall', 'Nason Hall', 'Barton Hall']
+const dormOptions = ['Barton Hall', 'Blitman Residence Commons', 'Bray Hall', 'BARH', 'Cary Hall', 'Crocket Hall', 'Davison/Nugent Hall', 'E-Complex', 'Hall Hall', 'Nason Hall', 'North Hall', 'Polytechnic Apartments', 'Quad', 'RAHP A', 'RAHP B', 'Sharp Hall', 'Stacwyck Apartments', 'Warren Hall']
 
 const purchases = [
   { title: 'Calculus: Early Transcendentals', seller: 'Evan T.', date: 'September 18, 2026', price: '$35', status: 'Completed' },
