@@ -26,7 +26,7 @@ beforeEach(() => {
   favoritesQuery.eq.mockResolvedValue({ data: [], error: null })
   listingsQuery.insert.mockReturnValue(listingsQuery)
   listingsQuery.single.mockResolvedValue({
-    data: { id: 2, name: 'Desk lamp', price: 10, category: 'Furniture', condition: 'Good condition', seller_id: 'user-1', image_url: 'https://cdn.test/lamp.png' },
+    data: { id: 2, name: 'Desk lamp', price: 10, category: 'Furniture', condition: 'Good condition', seller_id: 'user-1', image_path: 'user-1/lamp.png' },
     error: null,
   })
   client.from.mockImplementation((table: string) => table === 'listings' ? listingsQuery : favoritesQuery)
@@ -37,7 +37,7 @@ beforeEach(() => {
 
 it('restores saved listings after loading', async () => {
   listingsQuery.order.mockResolvedValue({
-    data: [{ id: 2, name: 'Desk lamp', price: 10, category: 'Furniture', condition: 'Good condition', seller_id: 'user-2', image_url: null }],
+    data: [{ id: 2, name: 'Desk lamp', price: 10, category: 'Furniture', condition: 'Good condition', seller_id: 'user-2', image_path: null }],
     error: null,
   })
   favoritesQuery.eq.mockReset()
@@ -60,5 +60,5 @@ it('uploads a listing image and uses its public URL', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Post listing/ }))
 
   await waitFor(() => expect(bucket.upload).toHaveBeenCalled())
-  expect(listingsQuery.select).toHaveBeenLastCalledWith('id, name, price, category, condition, seller_id, image_url')
+  expect(listingsQuery.select).toHaveBeenLastCalledWith('id, name, price, category, condition, seller_id, image_path')
 })

@@ -27,7 +27,7 @@ type ListingRow = {
   category: string
   condition: string
   seller_id: string
-  image_url: string | null
+  image_path: string | null
   profiles: { display_name: string } | null
 }
 
@@ -38,7 +38,9 @@ function toListing(row: ListingRow): Listing {
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
     category: row.category,
     condition: row.condition ?? 'Good condition',
-    image: row.image_url || listingImageFallback,
+    image: row.image_path && supabase
+      ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
+      : listingImageFallback,
     seller: row.profiles?.display_name ?? 'RPI student',
     sellerId: row.seller_id,
   }
@@ -80,7 +82,7 @@ function App() {
 
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition, seller_id, image_url')
+        .select('id, name, price, category, condition, seller_id, image_path')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
@@ -160,7 +162,7 @@ function App() {
   }
 
   setSaving(true)
-  let imageUrl: string | null = null
+  let imagePath: string | null = null
   if (newImage) {
     if (!newImage.type.startsWith('image/')) {
       setSaving(false)
@@ -172,15 +174,14 @@ function App() {
       setFormError('Listing images must be smaller than 5 MB.')
       return
     }
-    const extension = newImage.name.includes('.') ? newImage.name.slice(newImage.name.lastIndexOf('.')) : ''
-    const filePath = `${userData.user.id}/listing-${Date.now()}${extension}`
-    const { error: uploadError } = await supabase.storage.from('listing-images').upload(filePath, newImage, { upsert: false })
+    const extension = newImage.name.split('.').pop()?.toLowerCase() || 'jpg'
+    imagePath = `${userData.user.id}/${crypto.randomUUID()}.${extension}`
+    const { error: uploadError } = await supabase.storage.from('listing-images').upload(imagePath, newImage, { contentType: newImage.type, upsert: false })
     if (uploadError) {
       setSaving(false)
       setFormError(uploadError.message)
       return
     }
-    imageUrl = supabase.storage.from('listing-images').getPublicUrl(filePath).data.publicUrl
   }
 
   const { data, error } = await supabase
@@ -191,9 +192,9 @@ function App() {
       category: newCategory,
       condition: newCondition,
       seller_id: userData.user.id,
-      image_url: imageUrl,
+      image_path: imagePath,
     })
-    .select('id, name, price, category, condition, seller_id, image_url')
+    .select('id, name, price, category, condition, seller_id, image_path')
     .single()
   setSaving(false)
 
