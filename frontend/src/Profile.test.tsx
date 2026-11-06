@@ -9,7 +9,7 @@ const { client, bucket } = vi.hoisted(() => {
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 
 const user = { id: 'u1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student', dorm: 'Bray Hall' } }
-const saved = { id: 7, title: 'Desk lamp', price: '$5', category: 'Electronics', image: 'lamp.png', condition: 'Fair', seller: 'Test seller' }
+const saved = { id: 7, title: 'Desk lamp', price: '$5', category: ['Electronics'], image: 'lamp.png', condition: 'Fair', seller: 'Test seller' }
 
 beforeEach(() => {
   vi.resetAllMocks()
