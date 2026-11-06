@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
 import Profile from './Profile'
+import Moderation from './Moderation'
 
 type Listing = {
   id: number
@@ -57,9 +58,13 @@ function App() {
   const [favorites, setFavorites] = useState<number[]>([])
   const [showSellForm, setShowSellForm] = useState(false)
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
+  const [showModeration, setShowModeration] = useState(false)
+  const [listingNotice, setListingNotice] = useState('')
+  const [listingReload, setListingReload] = useState(0)
   const handleSessionChange = useCallback((nextSession: Session | null) => {
     setSession(nextSession)
     if (!nextSession) setShowMessages(false)
+    if (nextSession?.user.app_metadata?.group !== 'admin') setShowModeration(false)
   }, [])
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
@@ -107,6 +112,7 @@ function App() {
       const { data, error } = await supabase
         .from('listings')
         .select('id, name, price, category, condition, image_path, seller_id')
+        .eq('moderation_status', 'approved')
         .order('id', { ascending: false })
 
       if (error) {
@@ -128,7 +134,7 @@ function App() {
       setLoading(false)
     }
     loadListings()
-  }, [])
+  }, [listingReload])
 
   useEffect(() => {
     function handleHashChange() {
@@ -192,7 +198,7 @@ function App() {
       }
     }
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('listings')
       .insert({
         name: newTitle.trim(),
@@ -214,7 +220,7 @@ function App() {
       return
     }
 
-    setListings((current) => [toListing(data as ListingRow), ...current])
+    setListingNotice('Your listing was submitted for admin approval. It will appear after approval.')
     setNewTitle('')
     setNewPrice('')
     setNewImage(null)
@@ -232,6 +238,7 @@ function App() {
           <a className="wordmark" href="#top" aria-label="RenSeller home"><span>REN</span>SELLER</a>
           <p className="campus-note">THE RPI STUDENT MARKETPLACE</p>
           <nav className="account-nav" aria-label="Account navigation">
+            {session?.user.app_metadata?.group === 'admin' && <button className="text-button" type="button" onClick={() => { setSelectedListing(null); setShowModeration(true) }}>Moderate listings</button>}
             {session && (
               <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>
                 Messages
@@ -252,7 +259,15 @@ function App() {
       </header>
 
       <main id="top">
-        {currentPage === 'profile' ? (
+        {listingNotice && <p className="page-width" role="status">{listingNotice}</p>}
+        {showModeration && session?.user.app_metadata?.group === 'admin' ? (
+          <Moderation key={session.user.id} onBack={() => setShowModeration(false)} onModerated={(id) => {
+            setListings((current) => current.filter((listing) => listing.id !== id))
+            setFavorites((current) => current.filter((favorite) => favorite !== id))
+            setSelectedListing(null)
+            setListingReload((value) => value + 1)
+          }} />
+        ) : currentPage === 'profile' ? (
           <Profile
             onBack={returnHome}
             savedListings={listings.filter((listing) => favorites.includes(listing.id))}

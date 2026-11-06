@@ -20,9 +20,11 @@ services:
     working_dir: /tmp/project
     environment:
       PYTHONDONTWRITEBYTECODE: '1'
+      REQUIRE_DATABASE_TESTS: '1'
     volumes:
       - ./backend:/source/backend:ro
       - ./pytest.ini:/source/pytest.ini:ro
+      - ./supabase:/source/supabase:ro
     command:
       - sh
       - -ec
@@ -31,5 +33,10 @@ services:
         cp /source/pytest.ini .
         cp /source/backend/requirements*.txt backend/
         cp -r /source/backend/app /source/backend/tests backend/
+        cp -r /source/supabase .
         pip install --no-cache-dir -r backend/requirements-dev.txt
-        python -m pytest
+        apt-get update
+        apt-get install -y --no-install-recommends postgresql
+        chown -R postgres:postgres /tmp/project
+        export PATH="$$(pg_config --bindir):$$PATH"
+        runuser -u postgres -- python -m pytest

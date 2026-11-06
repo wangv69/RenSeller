@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 import { query, session } from './test/client'
 
-const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), auth: { getUser: vi.fn() }, storage: { from: vi.fn() } } }))
+const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), rpc: vi.fn(), auth: { getUser: vi.fn() }, storage: { from: vi.fn() } } }))
 const bucket = { upload: vi.fn(), remove: vi.fn(), getPublicUrl: vi.fn() }
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 vi.mock('./Auth', () => ({ default: function TestAuth({ onSessionChange }: { onSessionChange: (value: unknown) => void }) {
@@ -22,6 +22,7 @@ const members = [
 ]
 beforeEach(() => {
   vi.resetAllMocks()
+  session.user.app_metadata = {}
   client.from.mockImplementation((table: string) => query({ data: table === 'messaging_members' ? members : rows, error: null }))
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'self' } } })
   client.storage.from.mockReturnValue(bucket)
@@ -109,12 +110,13 @@ it('requires authentication before creating a listing', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('sign in')
 })
-it('creates a listing and adds the persisted result to the grid', async () => {
+it('submits a listing for approval without publishing it immediately', async () => {
   await sell()
   const insert = query({ data: { ...rows[0], id: 3, name: 'New book', price: 15 }, error: null })
   client.from.mockReturnValue(insert)
   fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
-  expect(await screen.findByText('New book')).toBeInTheDocument()
+  expect(await screen.findByRole('status')).toHaveTextContent('submitted for admin approval')
+  expect(screen.queryByText('New book')).not.toBeInTheDocument()
   expect(insert.insert).toHaveBeenCalledWith({ name: 'New book', price: 15, category: 'Textbooks', condition: 'Good condition', seller_id: 'self', image_path: null })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
@@ -140,13 +142,13 @@ it('uploads the chosen photo and saves its path with the listing', async () => {
   const insert = query({ data: { ...rows[0], id: 3, name: 'New book', price: 15, image_path: 'self/uploaded.png' }, error: null })
   client.from.mockReturnValue(insert)
   fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
-  expect(await screen.findByText('New book')).toBeInTheDocument()
+  expect(await screen.findByRole('status')).toHaveTextContent('submitted for admin approval')
   const [path, file, options] = bucket.upload.mock.calls[0]
   expect(path).toMatch(/^self\/.+\.png$/)
   expect(file).toBeInstanceOf(File)
   expect(options).toEqual({ contentType: 'image/png', upsert: false })
   expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ image_path: path }))
-  expect(screen.getByAltText('New book')).toHaveAttribute('src', 'https://cdn.test/self/uploaded.png')
+  expect(screen.queryByAltText('New book')).not.toBeInTheDocument()
   expect(bucket.remove).not.toHaveBeenCalled()
 })
 it('rejects an unsupported photo before anything is uploaded', async () => {
@@ -185,4 +187,49 @@ it('clears the chosen photo after posting', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
   expect(screen.queryByAltText('Selected photo preview')).not.toBeInTheDocument()
+})
+
+it('requests only approved listings for the public marketplace', async () => {
+  const listings = query({ data: rows, error: null })
+  client.from.mockImplementation((table: string) => table === 'listings' ? listings : query({ data: members, error: null }))
+  await start()
+  expect(listings.eq).toHaveBeenCalledWith('moderation_status', 'approved')
+})
+
+it('hides admin moderation from regular users', async () => {
+  await start()
+  expect(screen.queryByRole('button', { name: 'Moderate listings' })).not.toBeInTheDocument()
+})
+
+it('lets admins open moderation and closes it on sign-out', async () => {
+  session.user.app_metadata = { group: 'admin' }
+  await start()
+  fireEvent.click(screen.getByRole('button', { name: 'Moderate listings' }))
+  expect(await screen.findByRole('heading', { name: 'Listing moderation' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Back to listings' }))
+  expect(await screen.findByRole('heading', { name: 'Freshly listed' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Moderate listings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Test sign out' }))
+  expect(screen.queryByRole('heading', { name: 'Listing moderation' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Moderate listings' })).not.toBeInTheDocument()
+})
+
+it('removes a moderated listing from the marketplace after confirmation', async () => {
+  session.user.app_metadata = { group: 'admin' }
+  client.from.mockImplementation((table: string) => query({ data: table === 'messaging_members' ? members : rows.map((row) => ({ ...row, moderation_status: 'approved' })), error: null }))
+  await start()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Save listing' })[0])
+  fireEvent.click(screen.getByRole('button', { name: 'Moderate listings' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Review Calculus book' }))
+  fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: 'Prohibited item' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+  client.rpc.mockImplementation(() => {
+    client.from.mockImplementation((table: string) => query({ data: table === 'messaging_members' ? members : [rows[1]], error: null }))
+    return query({ data: null, error: null })
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }))
+  await screen.findByText(/Listing updated/)
+  fireEvent.click(screen.getByRole('button', { name: 'Back to listings' }))
+  expect(await screen.findByText('Desk lamp')).toBeInTheDocument()
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
 })

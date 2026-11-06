@@ -39,6 +39,7 @@ export default function Profile({ onBack, savedListings, onToggleSaved }: Profil
   const [profileImage, setProfileImage] = useState('')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [group, setGroup] = useState<'user' | 'admin' | null>(null)
   const [dorm, setDorm] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -58,6 +59,7 @@ export default function Profile({ onBack, savedListings, onToggleSaved }: Profil
         setProfileImage(metadata.avatar_url ?? '')
         setFullName(metadata.full_name ?? '')
         setEmail(data.user.email ?? '')
+        setGroup(data.user.app_metadata?.group === 'admin' ? 'admin' : 'user')
         setDorm(metadata.dorm ?? '')
       }
       setSessionReady(true)
@@ -171,7 +173,7 @@ export default function Profile({ onBack, savedListings, onToggleSaved }: Profil
           {activeSection === 'information' ? <>
             <div className="profile-panel profile-identity-panel">
               <div className="profile-picture-wrap"><div className="profile-picture">{profileImage ? <img src={profileImage} alt="Profile" /> : initial}</div><label className="upload-picture">Change picture<input type="file" accept="image/*" onChange={uploadProfileImage} /></label></div>
-              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p></div>
+              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p>{group && <p>Account group: {group === 'admin' ? 'Admin' : 'User'}</p>}</div>
             </div>
 
             <form className="profile-panel profile-form" onSubmit={saveInformation}>

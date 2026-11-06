@@ -95,7 +95,32 @@ def test_auth_claims(client, monkeypatch, email, status, metadata):
     assert response.status_code == status
     decode.assert_called_once_with('test', 'public-key', algorithms=['RS256'], audience='authenticated', issuer='https://example.test/auth/v1')
     if status == 200:
-        assert response.json() == {'id': 'student-id', 'email': email, 'username': metadata.get('username', 'student')}
+        assert response.json() == {'id': 'student-id', 'email': email, 'username': metadata.get('username', 'student'), 'group': 'user'}
+
+
+@pytest.mark.parametrize('metadata,expected', [
+    ({}, 'user'),
+    ({'group': 'user'}, 'user'),
+    ({'group': 'admin'}, 'admin'),
+    ({'group': 'Admin'}, 'user'),
+    ({'group': 'owner'}, 'user'),
+    ({'group': None}, 'user'),
+    ({'group': ['admin']}, 'user'),
+    (None, 'user'),
+    ('admin', 'user'),
+])
+def test_account_group_uses_only_verified_app_metadata(client, monkeypatch, metadata, expected):
+    monkeypatch.setenv('SUPABASE_URL', 'https://example.test')
+    jwks = MagicMock()
+    monkeypatch.setattr(auth, 'get_jwks_client', lambda: jwks)
+    monkeypatch.setattr(auth.jwt, 'decode', MagicMock(return_value={
+        'sub': 'student-id', 'email': 'student@rpi.edu',
+        'app_metadata': metadata, 'user_metadata': {'group': 'admin'},
+        'group': 'admin', 'role': 'authenticated',
+    }))
+    response = client.get('/auth/me', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 200
+    assert response.json()['group'] == expected
 
 
 def test_jwks_configuration(monkeypatch):

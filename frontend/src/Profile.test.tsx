@@ -24,6 +24,7 @@ async function renderProfile(savedListings = [] as typeof saved[]) {
   const props = { onBack: vi.fn(), onToggleSaved: vi.fn(), savedListings }
   render(<Profile {...props} />)
   expect(screen.getByText('Loading profile...')).toBeInTheDocument()
+  expect(screen.queryByText(/Account group:/)).not.toBeInTheDocument()
   await screen.findByRole('heading', { name: 'Profile' })
   return props
 }
@@ -40,6 +41,28 @@ it('loads the signed-in user into the form', async () => {
   expect(screen.getByText('@test')).toBeInTheDocument()
   expect(screen.getByText('T')).toBeInTheDocument()
 })
+it.each([
+  [undefined, 'User'],
+  [null, 'User'],
+  [{ group: 'user' }, 'User'],
+  [{ group: 'admin' }, 'Admin'],
+  [{ group: 'Admin' }, 'User'],
+  [{ group: 'owner' }, 'User'],
+  [{ group: null }, 'User'],
+  [{ group: ['admin'] }, 'User'],
+])('shows the read-only account group from app metadata (%j)', async (appMetadata, label) => {
+  client.auth.getUser.mockResolvedValue({ data: { user: {
+    ...user, app_metadata: appMetadata, user_metadata: { ...user.user_metadata, group: 'admin' },
+  } }, error: null })
+  await renderProfile()
+  expect(screen.getByText(`Account group: ${label}`)).toBeInTheDocument()
+  expect(screen.queryByRole('combobox', { name: /group/i })).not.toBeInTheDocument()
+  submit('Save changes')
+  await screen.findByText('Profile information saved.')
+  expect(client.auth.updateUser).toHaveBeenCalledWith({
+    email: user.email, data: { full_name: 'Test Student', dorm: 'Bray Hall' },
+  })
+})
 it('shows a saved avatar and falls back to defaults for missing fields', async () => {
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1', user_metadata: { avatar_url: 'https://cdn.test/a.png' } } }, error: null })
   await renderProfile()
@@ -50,6 +73,14 @@ it('asks signed-out users to sign in', async () => {
   client.auth.getUser.mockResolvedValue({ data: { user: null }, error: null })
   await renderProfile()
   expect(screen.getByRole('status')).toHaveTextContent('Please sign in')
+  expect(screen.queryByText(/Account group:/)).not.toBeInTheDocument()
+})
+
+it('does not show a group when fetching the account fails', async () => {
+  client.auth.getUser.mockResolvedValue({ data: { user }, error: { message: 'Unavailable' } })
+  await renderProfile()
+  expect(screen.getByRole('status')).toHaveTextContent('Please sign in')
+  expect(screen.queryByText(/Account group:/)).not.toBeInTheDocument()
 })
 
 it.each([

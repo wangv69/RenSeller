@@ -30,7 +30,9 @@ These isolated containers copy source into temporary working directories, instal
 
 ## Covered behaviors
 
-- App: listing rendering, search/category filters, favorites/details, creation, invalid prices, authentication requirement, insert failures, session/message navigation, missing configuration
+- App: listing rendering, search/category filters, favorites/details, pending submission, approved-only marketplace queries, admin-only moderation navigation/removal refresh, invalid prices, authentication requirement, insert failures, session/message navigation, missing configuration
+- Moderation: review queues/details/photos, approval/rejection/removal confirmation, reasons, validation, loading, errors/retry, stale queue cleanup, duplicate submission guards, request abortion on unmount
+- Listing database integration: disposable local PostgreSQL with actual moderation migration, RLS and cross-account access, default pending for existing/new listings, public visibility, direct-write denial, audit integrity, input boundaries, stale decisions, revoked/ineligible admins. See [user groups](docs/USER_GROUPS.md) for setup and deployment.
 - Auth: sessions, sign-in, sign-up, RPI domain validation, metadata, duplicate accounts, password mismatches, reset email/redirects, expired recovery links, password updates, recovery events, network/service errors, sign-out, subscription cleanup
 - Messages: existing-conversation inbox, name search for registered students, no-match results, selecting a recipient without sending, incoming conversations and latest-message ordering, member directory empty/error states, conversation isolation, suggestions, send/keyboard behavior, saved drafts, retry IDs, ambiguous insert confirmation, history errors, pagination, realtime callbacks, reconnect status, focus refresh, subscription cleanup
 - Supabase client: configured and unconfigured initialization
@@ -40,7 +42,7 @@ GitHub Actions runs frontend coverage, lint, build, and backend coverage on push
 
 ## Remaining integration work
 
-The suites use synthetic fixtures and mock Supabase/PostgreSQL boundaries. They do not prove actual email delivery, hosted redirects, JWT signature verification against a deployed JWKS endpoint, database migrations/RLS, two-account realtime delivery, or browser layout. The React entrypoint is excluded from unit coverage because it only mounts the application; include it in future browser smoke tests.
+The unit suites use synthetic fixtures and mock service boundaries. Listing moderation also has real isolated PostgreSQL migration/RLS checks; messaging migrations/RLS remain unverified. The suites do not prove actual email delivery, hosted redirects, JWT signature verification against a deployed JWKS endpoint, hosted PostgREST integration, two-account realtime delivery, or browser layout. The React entrypoint is excluded from unit coverage because it only mounts the application; include it in future browser smoke tests.
 
 Before changing SQL policies, run isolated Supabase integration checks for anonymous access, non-RPI users, participant-only reads, sender spoofing, self-messaging, nonmember recipients, immutable messages, and body limits (blank, 1, 2000, 2001 characters). Verify directory synchronization for confirmation, ban/deletion and metadata changes. Never run destructive fixtures against production.
 

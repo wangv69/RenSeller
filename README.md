@@ -13,6 +13,9 @@ scope and semester goals, and the [architecture overview](docs/ARCHITECTURE.md)
 for the current and planned system design. Track implementation status in the
 [feature checklist](docs/feature_checklist.md).
 
+See [user groups](docs/USER_GROUPS.md) for regular-user/admin membership and
+administrator-managed assignment.
+
 ## Run with Docker
 
 Install Docker with the Compose plugin and make sure `docker info` and

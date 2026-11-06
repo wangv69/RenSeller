@@ -49,4 +49,6 @@ def get_current_user(
 def get_me(user: dict = Depends(get_current_user)) -> dict:
     metadata = user.get("user_metadata", {})
     username = metadata.get("username") or user.get("email", "").split("@", 1)[0]
-    return {"id": user.get("sub"), "email": user.get("email"), "username": username}
+    app_metadata = user.get("app_metadata")
+    group = "admin" if isinstance(app_metadata, dict) and app_metadata.get("group") == "admin" else "user"
+    return {"id": user.get("sub"), "email": user.get("email"), "username": username, "group": group}

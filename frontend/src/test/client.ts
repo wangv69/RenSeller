@@ -7,9 +7,10 @@ export function query(result: unknown) {
     range: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(), single: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockReturnThis(),
+    abortSignal: vi.fn().mockReturnThis(),
     then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
   }
   return chain
 }
 
-export const session = { user: { id: 'self', email: 'test@rpi.edu', user_metadata: { username: 'test' } } }
+export const session = { user: { id: 'self', email: 'test@rpi.edu', app_metadata: {} as Record<string, unknown>, user_metadata: { username: 'test' } } }
