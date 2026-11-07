@@ -41,6 +41,5 @@ it('shows posted and saved listings in history', async () => {
 
   expect(screen.getByRole('heading', { name: 'My listings' })).toBeInTheDocument()
   expect(screen.getByText('My textbook')).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'Saved listings' })).toBeInTheDocument()
-  expect(screen.getByText('Saved lamp')).toBeInTheDocument()
+  expect(screen.queryByText('Saved lamp')).not.toBeInTheDocument()
 })

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -18,6 +18,7 @@ vi.mock('./lib/supabase', () => ({ supabase: client }))
 vi.mock('./Auth', () => ({ default: () => <button type="button">Account</button> }))
 
 beforeEach(() => {
+  cleanup()
   vi.resetAllMocks()
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
   listingsQuery.select.mockReturnValue(listingsQuery)
@@ -46,6 +47,21 @@ it('restores saved listings after loading', async () => {
   render(<App />)
 
   await waitFor(() => expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument())
+})
+
+it('opens a seller profile from a listing', async () => {
+  listingsQuery.order.mockResolvedValue({
+    data: [{ id: 2, name: 'Desk lamp', price: 10, category: 'Furniture', condition: 'Good condition', seller_id: 'user-2', image_path: null, profiles: [{ display_name: ' Jordan Student ' }] }],
+    error: null,
+  })
+
+  render(<App />)
+
+  const sellerLinks = await screen.findAllByRole('button', { name: /Listed by Jordan Student/ })
+  fireEvent.click(sellerLinks[sellerLinks.length - 1])
+
+  expect((await screen.findAllByRole('heading', { name: 'Jordan Student' })).length).toBeGreaterThan(0)
+  expect(screen.getByRole('heading', { name: 'Desk lamp' })).toBeInTheDocument()
 })
 
 it('uploads a listing image and uses its public URL', async () => {

@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase'
 
 import './App.css'
 import Auth from './Auth'
-import Profile from './Profile'
+import Profile, { SellerProfile } from './Profile'
 
 type Listing = {
   id: number
@@ -28,10 +28,12 @@ type ListingRow = {
   condition: string
   seller_id: string
   image_path: string | null
-  profiles: { display_name: string } | null
+  profiles: { display_name: string | null } | { display_name: string | null }[] | null
 }
 
-function toListing(row: ListingRow): Listing {
+function toListing(row: ListingRow, currentUserId: string | null, currentUserName: string | null): Listing {
+  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+  const sellerName = profile?.display_name?.trim()
   return {
     id: row.id,
     title: row.name,
@@ -41,7 +43,7 @@ function toListing(row: ListingRow): Listing {
     image: row.image_path && supabase
       ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
       : listingImageFallback,
-    seller: row.profiles?.display_name ?? 'RPI student',
+    seller: sellerName || (row.seller_id === currentUserId ? currentUserName : null) || 'RPI student',
     sellerId: row.seller_id,
   }
 }
@@ -54,11 +56,13 @@ function App() {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
   const [listings, setListings] = useState<Listing[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserProfile, setCurrentUserProfile] = useState({ fullName: '', email: '', dorm: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentPage, setCurrentPage] = useState<'home' | 'profile'>(
+  const [currentPage, setCurrentPage] = useState<'home' | 'profile' | 'seller-profile'>(
     window.location.hash === '#profile' ? 'profile' : 'home',
   )
+  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null)
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
@@ -78,15 +82,18 @@ function App() {
 
       const { data: userData } = await supabase.auth.getUser()
       const userId = userData.user?.id ?? null
+      const metadata = userData.user?.user_metadata ?? {}
+      const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user?.email?.split('@')[0] || null
       setCurrentUserId(userId)
+      setCurrentUserProfile({ fullName: metadata.full_name ?? '', email: userData.user?.email ?? '', dorm: metadata.dorm ?? '' })
 
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition, seller_id, image_path')
+        .select('id, name, price, category, condition, seller_id, image_path, profiles(display_name)')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
-      else setListings((data as unknown as ListingRow[]).map(toListing))
+      else setListings((data as unknown as ListingRow[]).map((row) => toListing(row, userId, userName)))
       if (userId) {
         const { data: favoriteRows, error: favoritesError } = await supabase
           .from('listing_favorites')
@@ -115,7 +122,14 @@ function App() {
   }
 
   function returnHome() {
+    setCurrentPage('home')
+    setSelectedSellerId(null)
     window.location.hash = 'top'
+  }
+
+  function openSellerProfile(sellerId: string) {
+    setSelectedSellerId(sellerId)
+    setCurrentPage('seller-profile')
   }
 
   const visibleListings = listings.filter((listing) => {
@@ -203,7 +217,9 @@ function App() {
     return
   }
 
-  setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
+  const metadata = userData.user.user_metadata ?? {}
+  const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user.email?.split('@')[0] || null
+  setListings((current) => [toListing({ ...data, profiles: null } as ListingRow, userData.user.id, userName), ...current])
   setNewTitle('')
   setNewPrice('')
   setNewImage(null)
@@ -248,6 +264,14 @@ function App() {
             savedListings={listings.filter((listing) => favorites.includes(listing.id))}
             postedListings={listings.filter((listing) => listing.sellerId === currentUserId)}
             onToggleSaved={toggleFavorite}
+          />
+        ) : currentPage === 'seller-profile' && selectedSellerId ? (
+          <SellerProfile
+            sellerName={listings.find((listing) => listing.sellerId === selectedSellerId)?.seller ?? 'RPI student'}
+            listings={listings.filter((listing) => listing.sellerId === selectedSellerId)}
+            profile={selectedSellerId === currentUserId ? currentUserProfile : undefined}
+            savedListings={selectedSellerId === currentUserId ? listings.filter((listing) => favorites.includes(listing.id)) : []}
+            onBack={returnHome}
           />
         ) : (
           <>
@@ -336,7 +360,9 @@ function App() {
                     </div>
                     <p className="listing-meta">RPI campus <span>·</span> {listing.category}</p>
                     <p className="seller-line">
-                      <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
+                      <button type="button" className="seller-profile-link" onClick={(event) => { event.stopPropagation(); openSellerProfile(listing.sellerId) }}>
+                        <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
+                      </button>
                     </p>
                   </div>
                 </article>
@@ -355,7 +381,7 @@ function App() {
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
 
-      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details"></button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button">Message seller <span></span></button></div></div></div></div>}
+      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details"></button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><button className="seller-profile-link listing-modal-meta" type="button" onClick={() => { closeListingDetails(); openSellerProfile(selectedListing.sellerId) }}>Listed by {selectedListing.seller}</button><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button">Message seller <span></span></button></div></div></div></div>}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>
