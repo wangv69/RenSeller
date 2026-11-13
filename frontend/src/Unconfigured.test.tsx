@@ -8,7 +8,9 @@ vi.mock('./lib/supabase', () => ({ supabase: null }))
 
 it('explains unavailable listings and hides selling without configuration', async () => {
   render(<App />)
-  expect(await screen.findByText('Listings are unavailable. Supabase is not configured.')).toBeInTheDocument()
+  expect(
+    await screen.findByText('Listings are unavailable. Supabase is not configured.'),
+  ).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Sell an item/ })).not.toBeInTheDocument()
 })
 it('explains missing authentication configuration', () => {
@@ -19,5 +21,7 @@ it('explains missing authentication configuration', () => {
 })
 it('explains unavailable messaging configuration', async () => {
   render(<Messages isOpen userId="test" onClose={vi.fn()} />)
-  expect(await screen.findByText('Student directory is unavailable. Supabase is not configured.')).toBeInTheDocument()
+  expect(
+    await screen.findByText('Student directory is unavailable. Supabase is not configured.'),
+  ).toBeInTheDocument()
 })

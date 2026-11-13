@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, main
-from app.api import auth, health
+from app.api import auth, diagnostics, health
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_database_connection(monkeypatch):
 def test_database_diagnostic(client, monkeypatch):
     connection = MagicMock()
     connection.cursor.return_value.fetchone.return_value = ['test-time']
-    monkeypatch.setattr(main, 'get_connection', lambda: connection)
+    monkeypatch.setattr(diagnostics, 'get_connection', lambda: connection)
     assert client.get('/database-test').json() == {'message': 'Database connected!', 'database_time': 'test-time'}
     connection.cursor.return_value.close.assert_called_once()
     connection.close.assert_called_once()
@@ -57,8 +57,23 @@ def test_database_diagnostic(client, monkeypatch):
 def test_database_diagnostic_failure(client, monkeypatch):
     def fail():
         raise psycopg.OperationalError('offline')
-    monkeypatch.setattr(main, 'get_connection', fail)
+    monkeypatch.setattr(diagnostics, 'get_connection', fail)
     assert client.get('/database-test').json() == {'error': 'offline'}
+
+
+@pytest.mark.parametrize('stage', ['cursor', 'query'])
+def test_database_diagnostic_closes_resources_on_failure(client, monkeypatch, stage):
+    connection = MagicMock()
+    cursor = connection.cursor.return_value
+    if stage == 'cursor':
+        connection.cursor.side_effect = psycopg.OperationalError('offline')
+    else:
+        cursor.execute.side_effect = psycopg.OperationalError('offline')
+    monkeypatch.setattr(diagnostics, 'get_connection', lambda: connection)
+    assert client.get('/database-test').json() == {'error': 'offline'}
+    connection.close.assert_called_once()
+    if stage == 'query':
+        cursor.close.assert_called_once()
 
 
 @pytest.mark.parametrize('header', [{}, {'Authorization': 'Basic abc'}])
@@ -82,7 +97,7 @@ def test_auth_invalid_token(client, monkeypatch, error):
     assert response.json()['detail'] == 'Invalid authentication token'
 
 
-@pytest.mark.parametrize('email,status', [('student@RPI.EDU', 200), ('student@rpi.edu.evil', 403), ('', 403), ('student@example.com', 403)])
+@pytest.mark.parametrize('email,status', [('student@RPI.EDU', 200), ('student@rpi.edu.evil', 403), ('', 403), ('student@example.com', 403), (None, 403), (42, 403)])
 @pytest.mark.parametrize('metadata', [{}, {'username': 'chosen'}])
 def test_auth_claims(client, monkeypatch, email, status, metadata):
     monkeypatch.setenv('SUPABASE_URL', 'https://example.test/')
@@ -121,6 +136,19 @@ def test_account_group_uses_only_verified_app_metadata(client, monkeypatch, meta
     response = client.get('/auth/me', headers={'Authorization': 'Bearer test'})
     assert response.status_code == 200
     assert response.json()['group'] == expected
+
+
+@pytest.mark.parametrize('metadata', [None, 'student', [], {'username': ['student']}])
+def test_profile_falls_back_for_malformed_user_metadata(client, monkeypatch, metadata):
+    monkeypatch.setenv('SUPABASE_URL', 'https://example.test')
+    monkeypatch.setattr(auth, 'get_jwks_client', MagicMock())
+    monkeypatch.setattr(auth.jwt, 'decode', MagicMock(return_value={
+        'sub': 'student-id', 'email': 'student@rpi.edu', 'user_metadata': metadata,
+    }))
+    response = client.get('/auth/me', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 200
+    assert response.json()['username'] == 'student'
+    assert response.json()['group'] == 'user'
 
 
 def test_jwks_configuration(monkeypatch):

@@ -34,9 +34,10 @@ def database():
         try:
             with psycopg.connect(host='127.0.0.1', port=port, user='postgres', dbname='postgres', autocommit=True) as connection:
                 connection.execute((ROOT / 'supabase/tests/listings_fixture.sql').read_text())
-                migration = ROOT / 'supabase/migrations/202611060001_listing_moderation.sql'
-                if migration.exists():
-                    connection.execute(migration.read_text())
+                for name in ['202611060001_listing_moderation.sql', '202611130001_account_groups.sql', '202611130002_protect_admin_groups.sql']:
+                    migration = ROOT / 'supabase/migrations' / name
+                    if migration.exists():
+                        connection.execute(migration.read_text())
                 yield connection
         finally:
             subprocess.run([pg_ctl, '-D', str(cluster), '-m', 'immediate', '-w', 'stop'], check=True, capture_output=True)

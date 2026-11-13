@@ -15,8 +15,56 @@ Supabase's own `role` claim do not assign application groups.
 Use a trusted server or administrative script with Supabase's Auth Admin API
 to set `app_metadata.group` to `admin` or `user` for the intended account.
 Preserve the account's other app metadata. Service-role credentials must remain
-outside frontend code and browser environment variables. There is deliberately
-no self-service group selector or group-change endpoint.
+outside frontend code and browser environment variables. Regular users cannot
+change account groups. Current admins can use the **Manage users** screen.
+
+### Manage collaborators in the website
+
+Apply `202611130001_account_groups.sql`, then `202611130002_protect_admin_groups.sql`,
+after the listing moderation migration. The second migration also upgrades installations
+that already applied the original account-management migration.
+Collaborators sign up with their RPI email and confirm it; they automatically
+start as regular users. They do not need to be added to a list in the code.
+
+An existing admin opens **Manage users**, searches by email, and chooses
+**Make admin** for a regular user. Enter a reason and confirm. The database
+checks current admin membership, preserves other app metadata, and records the
+actor, target, previous/new group, reason, and time in `account_group_events`.
+Only confirmed, active RPI accounts can be promoted. App admins cannot demote
+themselves or any other admin, including banned/unconfirmed admins. Demotion is
+blocked by the database RPC even for forged requests and simultaneous attempts.
+The UI marks admin accounts as protected. Changes are serialized and stale
+decisions are rejected. Directory results are restricted to current admins.
+
+### Set up the first admin or recover when no active admin remains
+
+After the intended person registers and confirms their account, a project owner
+can run this in the Supabase SQL Editor, replacing the example address. This also
+restores access if all admins were demoted, banned, deleted, or lost their accounts
+through project-owner operations outside the app:
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+  || jsonb_build_object('group', 'admin')
+where lower(email) = lower('YOUR-ACCOUNT@rpi.edu')
+  and email_confirmed_at is not null
+  and deleted_at is null
+  and (banned_until is null or banned_until <= now())
+returning id, email;
+```
+
+Check that exactly the intended account is returned. Sign out and back in. Use
+the Users screen for subsequent changes; the SQL bootstrap is an operator action
+and does not create an application audit event. No live accounts or hosted
+database migrations are changed by this repository update.
+
+Only the Supabase project owner (or a separately trusted operator with equivalent
+project access) should revoke admin membership using the Auth Admin API or SQL.
+App admin membership does not grant project access. Before revoking the last active
+admin, restore or promote another confirmed, active RPI account. If none remain,
+use the recovery SQL above; there is no public signup or self-promotion fallback.
+Keep project-owner recovery access available separately from app accounts.
 
 Refresh the user's session after a change so newly issued JWTs contain the
 updated group. Existing JWTs can retain old membership until refreshed or

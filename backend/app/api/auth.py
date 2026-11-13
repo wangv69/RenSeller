@@ -39,8 +39,8 @@ def get_current_user(
     except (jwt.InvalidTokenError, jwt.PyJWKClientError) as error:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token") from error
 
-    email = claims.get("email", "").lower()
-    if not email.endswith("@rpi.edu"):
+    email = claims.get("email")
+    if not isinstance(email, str) or not email.lower().endswith("@rpi.edu"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An RPI email address is required")
     return claims
 
@@ -48,7 +48,9 @@ def get_current_user(
 @router.get("/me")
 def get_me(user: dict = Depends(get_current_user)) -> dict:
     metadata = user.get("user_metadata", {})
-    username = metadata.get("username") or user.get("email", "").split("@", 1)[0]
+    username = metadata.get("username") if isinstance(metadata, dict) else None
+    if not isinstance(username, str) or not username:
+        username = user.get("email", "").split("@", 1)[0]
     app_metadata = user.get("app_metadata")
     group = "admin" if isinstance(app_metadata, dict) and app_metadata.get("group") == "admin" else "user"
     return {"id": user.get("sub"), "email": user.get("email"), "username": username, "group": group}

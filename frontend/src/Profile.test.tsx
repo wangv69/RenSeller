@@ -4,12 +4,27 @@ import Profile from './Profile'
 
 const { client, bucket } = vi.hoisted(() => {
   const bucket = { upload: vi.fn(), getPublicUrl: vi.fn() }
-  return { bucket, client: { auth: { getUser: vi.fn(), updateUser: vi.fn() }, storage: { from: vi.fn() } } }
+  return {
+    bucket,
+    client: { auth: { getUser: vi.fn(), updateUser: vi.fn() }, storage: { from: vi.fn() } },
+  }
 })
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 
-const user = { id: 'u1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student', dorm: 'Bray Hall' } }
-const saved = { id: 7, title: 'Desk lamp', price: '$5', category: 'Electronics', image: 'lamp.png', condition: 'Fair', seller: 'Test seller' }
+const user = {
+  id: 'u1',
+  email: 'test@rpi.edu',
+  user_metadata: { full_name: 'Test Student', dorm: 'Bray Hall' },
+}
+const saved = {
+  id: 7,
+  title: 'Desk lamp',
+  price: '$5',
+  category: 'Electronics',
+  image: 'lamp.png',
+  condition: 'Fair',
+  seller: 'Test seller',
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -20,7 +35,7 @@ beforeEach(() => {
   bucket.getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://cdn.test/avatar.png' } })
 })
 
-async function renderProfile(savedListings = [] as typeof saved[]) {
+async function renderProfile(savedListings = [] as (typeof saved)[]) {
   const props = { onBack: vi.fn(), onToggleSaved: vi.fn(), savedListings }
   render(<Profile {...props} />)
   expect(screen.getByText('Loading profile...')).toBeInTheDocument()
@@ -28,9 +43,12 @@ async function renderProfile(savedListings = [] as typeof saved[]) {
   await screen.findByRole('heading', { name: 'Profile' })
   return props
 }
-const submit = (button: string) => fireEvent.submit(screen.getByRole('button', { name: button }).closest('form')!)
-const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } })
-const pick = (file: File) => fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [file] } })
+const submit = (button: string) =>
+  fireEvent.submit(screen.getByRole('button', { name: button }).closest('form')!)
+const type = (label: string, value: string) =>
+  fireEvent.change(screen.getByLabelText(label), { target: { value } })
+const pick = (file: File) =>
+  fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [file] } })
 const png = () => new File(['x'], 'me.png', { type: 'image/png' })
 
 it('loads the signed-in user into the form', async () => {
@@ -51,20 +69,31 @@ it.each([
   [{ group: null }, 'User'],
   [{ group: ['admin'] }, 'User'],
 ])('shows the read-only account group from app metadata (%j)', async (appMetadata, label) => {
-  client.auth.getUser.mockResolvedValue({ data: { user: {
-    ...user, app_metadata: appMetadata, user_metadata: { ...user.user_metadata, group: 'admin' },
-  } }, error: null })
+  client.auth.getUser.mockResolvedValue({
+    data: {
+      user: {
+        ...user,
+        app_metadata: appMetadata,
+        user_metadata: { ...user.user_metadata, group: 'admin' },
+      },
+    },
+    error: null,
+  })
   await renderProfile()
   expect(screen.getByText(`Account group: ${label}`)).toBeInTheDocument()
   expect(screen.queryByRole('combobox', { name: /group/i })).not.toBeInTheDocument()
   submit('Save changes')
   await screen.findByText('Profile information saved.')
   expect(client.auth.updateUser).toHaveBeenCalledWith({
-    email: user.email, data: { full_name: 'Test Student', dorm: 'Bray Hall' },
+    email: user.email,
+    data: { full_name: 'Test Student', dorm: 'Bray Hall' },
   })
 })
 it('shows a saved avatar and falls back to defaults for missing fields', async () => {
-  client.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1', user_metadata: { avatar_url: 'https://cdn.test/a.png' } } }, error: null })
+  client.auth.getUser.mockResolvedValue({
+    data: { user: { id: 'u1', user_metadata: { avatar_url: 'https://cdn.test/a.png' } } },
+    error: null,
+  })
   await renderProfile()
   expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'https://cdn.test/a.png')
   expect(screen.getByRole('heading', { name: 'student' })).toBeInTheDocument()
@@ -88,7 +117,9 @@ it.each([
   ['test@rpi.edu', '   ', 'Enter your full name'],
 ])('validates information (%s)', async (email, name, message) => {
   await renderProfile()
-  type('RPI email', email); type('Full name', name); submit('Save changes')
+  type('RPI email', email)
+  type('Full name', name)
+  submit('Save changes')
   expect(await screen.findByRole('status')).toHaveTextContent(message)
   expect(client.auth.updateUser).not.toHaveBeenCalled()
 })
@@ -96,13 +127,21 @@ it('saves unchanged email details', async () => {
   await renderProfile()
   submit('Save changes')
   expect(await screen.findByRole('status')).toHaveTextContent('Profile information saved.')
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ email: 'test@rpi.edu', data: { full_name: 'Test Student', dorm: 'Bray Hall' } })
+  expect(client.auth.updateUser).toHaveBeenCalledWith({
+    email: 'test@rpi.edu',
+    data: { full_name: 'Test Student', dorm: 'Bray Hall' },
+  })
 })
 it('normalizes a changed email and clears the dorm', async () => {
   await renderProfile()
-  type('RPI email', ' New@RPI.edu '); type('Current dorm', ''); submit('Save changes')
+  type('RPI email', ' New@RPI.edu ')
+  type('Current dorm', '')
+  submit('Save changes')
   expect(await screen.findByRole('status')).toHaveTextContent('Check your new email')
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ email: 'new@rpi.edu', data: { full_name: 'Test Student', dorm: null } })
+  expect(client.auth.updateUser).toHaveBeenCalledWith({
+    email: 'new@rpi.edu',
+    data: { full_name: 'Test Student', dorm: null },
+  })
 })
 it('reports information save errors', async () => {
   await renderProfile()
@@ -116,13 +155,17 @@ it.each([
   ['secret123', 'different', 'Passwords do not match'],
 ])('validates passwords (%s)', async (password, confirm, message) => {
   await renderProfile()
-  type('New password', password); type('Confirm new password', confirm); submit('Update password')
+  type('New password', password)
+  type('Confirm new password', confirm)
+  submit('Update password')
   expect(await screen.findByRole('status')).toHaveTextContent(message)
   expect(client.auth.updateUser).not.toHaveBeenCalled()
 })
 it('updates the password and clears the fields', async () => {
   await renderProfile()
-  type('New password', 'secret123'); type('Confirm new password', 'secret123'); submit('Update password')
+  type('New password', 'secret123')
+  type('Confirm new password', 'secret123')
+  submit('Update password')
   expect(await screen.findByRole('status')).toHaveTextContent('Password updated.')
   expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'secret123' })
   expect(screen.getByLabelText('New password')).toHaveValue('')
@@ -130,7 +173,9 @@ it('updates the password and clears the fields', async () => {
 it('keeps the password fields on failure', async () => {
   await renderProfile()
   client.auth.updateUser.mockResolvedValue({ error: { message: 'Weak password' } })
-  type('New password', 'secret123'); type('Confirm new password', 'secret123'); submit('Update password')
+  type('New password', 'secret123')
+  type('Confirm new password', 'secret123')
+  submit('Update password')
   expect(await screen.findByRole('status')).toHaveTextContent('Weak password')
   expect(screen.getByLabelText('New password')).toHaveValue('secret123')
 })
@@ -139,7 +184,8 @@ it('rejects non-image and oversized profile pictures', async () => {
   await renderProfile()
   pick(new File(['x'], 'a.txt', { type: 'text/plain' }))
   expect(await screen.findByRole('status')).toHaveTextContent('Choose an image file')
-  const big = png(); Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
+  const big = png()
+  Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
   pick(big)
   expect(await screen.findByRole('status')).toHaveTextContent('smaller than 5 MB')
   fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [] } })
@@ -149,8 +195,14 @@ it('uploads a profile picture and saves its URL', async () => {
   await renderProfile()
   pick(png())
   expect(await screen.findByRole('status')).toHaveTextContent('Profile picture updated.')
-  expect(bucket.upload).toHaveBeenCalledWith(expect.stringMatching(/^u1\/avatar-\d+$/), expect.any(File), { upsert: true })
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ data: { avatar_url: 'https://cdn.test/avatar.png' } })
+  expect(bucket.upload).toHaveBeenCalledWith(
+    expect.stringMatching(/^u1\/avatar-\d+$/),
+    expect.any(File),
+    { upsert: true },
+  )
+  expect(client.auth.updateUser).toHaveBeenCalledWith({
+    data: { avatar_url: 'https://cdn.test/avatar.png' },
+  })
   expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'https://cdn.test/avatar.png')
 })
 it('reports upload and avatar update errors', async () => {

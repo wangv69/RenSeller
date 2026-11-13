@@ -3,14 +3,27 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import Moderation from './Moderation'
 import { query } from './test/client'
 
-const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), rpc: vi.fn(), storage: { from: vi.fn() } } }))
+const { client } = vi.hoisted(() => ({
+  client: { from: vi.fn(), rpc: vi.fn(), storage: { from: vi.fn() } },
+}))
 vi.mock('./lib/supabase', () => ({ supabase: client }))
-const row = { id: 1, name: 'Review this book', price: 12, category: 'Textbooks', condition: 'New', seller_id: 'seller-1', image_path: null, moderation_status: 'pending' }
+const row = {
+  id: 1,
+  name: 'Review this book',
+  price: 12,
+  category: 'Textbooks',
+  condition: 'New',
+  seller_id: 'seller-1',
+  image_path: null,
+  moderation_status: 'pending',
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
   client.from.mockReturnValue(query({ data: [row], error: null }))
-  client.storage.from.mockReturnValue({ getPublicUrl: () => ({ data: { publicUrl: 'https://cdn.test/book.png' } }) })
+  client.storage.from.mockReturnValue({
+    getPublicUrl: () => ({ data: { publicUrl: 'https://cdn.test/book.png' } }),
+  })
 })
 
 it('loads pending listings with review details and switches status filters', async () => {
@@ -42,14 +55,18 @@ it.each([false, true])('reports failed loads and allows retry (%s)', async (netw
     return query({ data: null, error: { message: 'Access denied' } })
   })
   render(<Moderation onBack={vi.fn()} onModerated={vi.fn()} />)
-  expect(await screen.findByRole('alert')).toHaveTextContent(network ? 'Network unavailable' : 'Access denied')
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    network ? 'Network unavailable' : 'Access denied',
+  )
   fireEvent.click(screen.getByRole('button', { name: 'Refresh listings' }))
   expect(await screen.findByRole('heading', { name: row.name })).toBeInTheDocument()
 })
 
 it('ignores a listing response after unmount', async () => {
   let resolve!: (value: unknown) => void
-  const response = new Promise((done) => { resolve = done })
+  const response = new Promise((done) => {
+    resolve = done
+  })
   client.from.mockReturnValue({ ...query(null), then: response.then.bind(response) })
   const { unmount } = render(<Moderation onBack={vi.fn()} onModerated={vi.fn()} />)
   unmount()
@@ -65,32 +82,47 @@ async function review() {
   return { ...view, onModerated }
 }
 
-it.each(['Approve', 'Reject', 'Remove'])('confirms a reason before %s and refreshes after success', async (action) => {
-  client.rpc.mockReturnValue(query({ data: null, error: null }))
-  const { onModerated } = await review()
-  fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: '  Checked campus rules  ' } })
-  fireEvent.click(screen.getByRole('button', { name: action }))
-  expect(screen.getByRole('button', { name: `Confirm ${action.toLowerCase()}` })).toBeInTheDocument()
-  expect(client.rpc).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: `Confirm ${action.toLowerCase()}` }))
-  await waitFor(() => expect(onModerated).toHaveBeenCalledWith(1))
-  expect(client.rpc).toHaveBeenCalledWith('moderate_listing', {
-    listing_id: 1, decision: action.toLowerCase(), reason: 'Checked campus rules', expected_status: 'pending',
-  })
-  expect(await screen.findByRole('status')).toHaveTextContent('Listing updated')
-})
+it.each(['Approve', 'Reject', 'Remove'])(
+  'confirms a reason before %s and refreshes after success',
+  async (action) => {
+    client.rpc.mockReturnValue(query({ data: null, error: null }))
+    const { onModerated } = await review()
+    fireEvent.change(screen.getByLabelText('Moderation reason'), {
+      target: { value: '  Checked campus rules  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: action }))
+    expect(
+      screen.getByRole('button', { name: `Confirm ${action.toLowerCase()}` }),
+    ).toBeInTheDocument()
+    expect(client.rpc).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: `Confirm ${action.toLowerCase()}` }))
+    await waitFor(() => expect(onModerated).toHaveBeenCalledWith(1))
+    expect(client.rpc).toHaveBeenCalledWith('moderate_listing', {
+      listing_id: 1,
+      decision: action.toLowerCase(),
+      reason: 'Checked campus rules',
+      expected_status: 'pending',
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('Listing updated')
+  },
+)
 
-it.each(['', '   ', 'x'.repeat(501)])('rejects an invalid moderation reason (%s)', async (reason) => {
-  await review()
-  fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: reason } })
-  fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
-  expect(screen.getByRole('alert')).toHaveTextContent('1 to 500')
-  expect(client.rpc).not.toHaveBeenCalled()
-})
+it.each(['', '   ', 'x'.repeat(501)])(
+  'rejects an invalid moderation reason (%s)',
+  async (reason) => {
+    await review()
+    fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: reason } })
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('1 to 500')
+    expect(client.rpc).not.toHaveBeenCalled()
+  },
+)
 
 it('cancels a decision without changing the listing', async () => {
   await review()
-  fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: 'Policy violation' } })
+  fireEvent.change(screen.getByLabelText('Moderation reason'), {
+    target: { value: 'Policy violation' },
+  })
   fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel decision' }))
   expect(screen.queryByRole('button', { name: 'Confirm remove' })).not.toBeInTheDocument()
@@ -106,14 +138,18 @@ it.each([false, true])('preserves the review and shows a failed decision (%s)', 
   fireEvent.change(screen.getByLabelText('Moderation reason'), { target: { value: 'Reviewed' } })
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
   fireEvent.click(screen.getByRole('button', { name: 'Confirm approve' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent(network ? 'Connection lost' : 'Listing changed')
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    network ? 'Connection lost' : 'Listing changed',
+  )
   expect(screen.getByLabelText('Moderation reason')).toHaveValue('Reviewed')
   expect(onModerated).not.toHaveBeenCalled()
 })
 
 it('disables duplicate decisions and aborts the request on unmount', async () => {
   let resolve!: (value: unknown) => void
-  const response = new Promise((done) => { resolve = done })
+  const response = new Promise((done) => {
+    resolve = done
+  })
   const request = { ...query(null), then: response.then.bind(response) }
   client.rpc.mockReturnValue(request)
   const { onModerated, unmount } = await review()
@@ -131,7 +167,12 @@ it('disables duplicate decisions and aborts the request on unmount', async () =>
 })
 
 it('shows photos and offers only removal for approved listings', async () => {
-  client.from.mockReturnValue(query({ data: [{ ...row, image_path: 'seller/book.png', moderation_status: 'approved' }], error: null }))
+  client.from.mockReturnValue(
+    query({
+      data: [{ ...row, image_path: 'seller/book.png', moderation_status: 'approved' }],
+      error: null,
+    }),
+  )
   await review()
   expect(screen.getByAltText(row.name)).toHaveAttribute('src', 'https://cdn.test/book.png')
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
@@ -139,7 +180,9 @@ it('shows photos and offers only removal for approved listings', async () => {
 })
 
 it('keeps removed listings read-only', async () => {
-  client.from.mockReturnValue(query({ data: [{ ...row, moderation_status: 'removed' }], error: null }))
+  client.from.mockReturnValue(
+    query({ data: [{ ...row, moderation_status: 'removed' }], error: null }),
+  )
   render(<Moderation onBack={vi.fn()} onModerated={vi.fn()} />)
   await screen.findByRole('heading', { name: row.name })
   expect(screen.queryByRole('button', { name: /Review Review/ })).not.toBeInTheDocument()

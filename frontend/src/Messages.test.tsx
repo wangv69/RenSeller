@@ -3,24 +3,37 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import Messages from './Messages'
 import { query } from './test/client'
 
-const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), channel: vi.fn(), removeChannel: vi.fn() } }))
+const { client } = vi.hoisted(() => ({
+  client: { from: vi.fn(), channel: vi.fn(), removeChannel: vi.fn() },
+}))
 vi.mock('./lib/supabase', () => ({ supabase: client }))
-const students = [{ id: 'other', full_name: 'Test Student A' }, { id: 'third', full_name: 'Test Student B' }]
-const saved = { id: 'saved', body: 'Hello', sender_id: 'self', recipient_id: 'other', created_at: '2026-01-01T12:00:00Z' }
+const students = [
+  { id: 'other', full_name: 'Test Student A' },
+  { id: 'third', full_name: 'Test Student B' },
+]
+const saved = {
+  id: 'saved',
+  body: 'Hello',
+  sender_id: 'self',
+  recipient_id: 'other',
+  created_at: '2026-01-01T12:00:00Z',
+}
 let history: ReturnType<typeof query>
 let directory: ReturnType<typeof query>
-let channel: { on: ReturnType<typeof vi.fn>, subscribe: ReturnType<typeof vi.fn> }
+let channel: { on: ReturnType<typeof vi.fn>; subscribe: ReturnType<typeof vi.fn> }
 beforeEach(() => {
   vi.resetAllMocks()
   history = query({ data: [], error: null })
   directory = query({ data: students, error: null })
-  client.from.mockImplementation((table) => table === 'messaging_members' ? directory : history)
+  client.from.mockImplementation((table) => (table === 'messaging_members' ? directory : history))
   channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis() }
   client.channel.mockReturnValue(channel)
 })
 async function start() {
   const view = render(<Messages isOpen userId="self" onClose={vi.fn()} />)
-  fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a student' }), { target: { value: 'Student A' } })
+  fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a student' }), {
+    target: { value: 'Student A' },
+  })
   fireEvent.click(await screen.findByRole('button', { name: /Test Student A/ }))
   await screen.findByRole('textbox', { name: 'Message about pickup' })
   await waitFor(() => expect(history.range).toHaveBeenCalled())
@@ -36,12 +49,16 @@ it('loads the directory excluding the current student and cleans up subscription
 })
 it('opens the requested seller conversation when provided', async () => {
   render(<Messages isOpen userId="self" initialMemberId="other" onClose={vi.fn()} />)
-  expect(await screen.findByRole('region', { name: 'Conversation with Test Student A' })).toBeInTheDocument()
+  expect(
+    await screen.findByRole('region', { name: 'Conversation with Test Student A' }),
+  ).toBeInTheDocument()
 })
 it('shows an empty directory', async () => {
   directory = query({ data: [], error: null })
   render(<Messages isOpen userId="self" onClose={vi.fn()} />)
-  expect(await screen.findByText('No other confirmed RPI students have joined yet.')).toBeInTheDocument()
+  expect(
+    await screen.findByText('No other confirmed RPI students have joined yet.'),
+  ).toBeInTheDocument()
 })
 it('shows a directory error', async () => {
   directory = query({ data: null, error: new Error('offline') })
@@ -69,7 +86,9 @@ it('keeps unrelated students out of the inbox until searched and selected', asyn
   expect(await screen.findByRole('button', { name: /Test Student B/ })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Test Student A/ })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Test Student B/ }))
-  expect(screen.getByRole('region', { name: 'Conversation with Test Student B' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('region', { name: 'Conversation with Test Student B' }),
+  ).toBeInTheDocument()
   expect(search).toHaveValue('')
   expect(history.insert).not.toHaveBeenCalled()
 })
@@ -86,13 +105,20 @@ it('loads existing incoming and outgoing conversations without listing every stu
   expect(within(inbox).queryByRole('button', { name: /Test Student B/ })).not.toBeInTheDocument()
 })
 it('adds newly received conversations and sorts the inbox by the latest message', async () => {
-  const incoming = { ...saved, id: 'incoming', sender_id: 'third', recipient_id: 'self', body: 'New incoming message', created_at: '2026-02-01T12:00:00Z' }
+  const incoming = {
+    ...saved,
+    id: 'incoming',
+    sender_id: 'third',
+    recipient_id: 'self',
+    body: 'New incoming message',
+    created_at: '2026-02-01T12:00:00Z',
+  }
   history = query({ data: [saved], error: null })
   render(<Messages isOpen userId="self" onClose={vi.fn()} />)
   const inbox = await screen.findByRole('complementary', { name: 'Conversations' })
   await within(inbox).findByRole('button', { name: /Test Student A/ })
   const refreshed = query({ data: [saved, incoming], error: null })
-  client.from.mockImplementation((table) => table === 'messaging_members' ? directory : refreshed)
+  client.from.mockImplementation((table) => (table === 'messaging_members' ? directory : refreshed))
   act(() => channel.on.mock.calls[0][2]())
   await within(inbox).findByRole('button', { name: /Test Student B/ })
   expect(within(inbox).getAllByRole('button')[0]).toHaveTextContent('Test Student B')
@@ -105,7 +131,11 @@ it('sends a trimmed message with Enter and clears the draft after persistence', 
   client.from.mockReturnValue(insert)
   fireEvent.change(screen.getByRole('textbox'), { target: { value: ' Hello ' } })
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-  await waitFor(() => expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ sender_id: 'self', recipient_id: 'other', body: 'Hello' })))
+  await waitFor(() =>
+    expect(insert.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ sender_id: 'self', recipient_id: 'other', body: 'Hello' }),
+    ),
+  )
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))
   expect(within(screen.getByRole('log')).getByText('Hello')).toBeInTheDocument()
 })
@@ -156,9 +186,16 @@ it('refreshes history on realtime events and reports reconnects', async () => {
   expect(screen.getByText(/Reconnecting/)).toBeInTheDocument()
 })
 it('paginates long histories and renders incoming messages', async () => {
-  const firstPage = Array.from({ length: 500 }, (_, i) => ({ ...saved, id: String(i), sender_id: 'other', body: `Message ${i}` }))
+  const firstPage = Array.from({ length: 500 }, (_, i) => ({
+    ...saved,
+    id: String(i),
+    sender_id: 'other',
+    body: `Message ${i}`,
+  }))
   let page = 0
-  history.range.mockImplementation(() => Promise.resolve({ data: page++ === 0 ? firstPage : [], error: null }))
+  history.range.mockImplementation(() =>
+    Promise.resolve({ data: page++ === 0 ? firstPage : [], error: null }),
+  )
   await start()
   expect(await within(screen.getByRole('log')).findByText('Message 499')).toBeInTheDocument()
   expect(history.range).toHaveBeenCalledWith(500, 999)
@@ -172,4 +209,23 @@ it('confirms a previously persisted message after an ambiguous insert error', as
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))
   expect(within(screen.getByRole('log')).getAllByText('Hello')).toHaveLength(1)
+})
+
+it('merges repeated history responses without duplicating visible messages', async () => {
+  history = query({ data: [saved], error: null })
+  await start()
+  expect(within(screen.getByRole('log')).getAllByText('Hello')).toHaveLength(1)
+  act(() => channel.on.mock.calls[0][2]())
+  await waitFor(() => expect(history.range).toHaveBeenCalledTimes(2))
+  expect(within(screen.getByRole('log')).getAllByText('Hello')).toHaveLength(1)
+})
+
+it('stops focus refreshes and removes the subscription when closed', async () => {
+  const view = await start()
+  view.rerender(<Messages isOpen={false} userId="self" onClose={vi.fn()} />)
+  history.range.mockClear()
+  fireEvent(window, new Event('focus'))
+  expect(history.range).not.toHaveBeenCalled()
+  expect(client.removeChannel).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

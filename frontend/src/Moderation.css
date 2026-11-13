@@ -1,12 +1,59 @@
-.moderation-page { padding-block: 32px 64px; }
-.moderation-toolbar { display: flex; align-items: end; gap: 16px; margin-block: 24px; }
-.moderation-toolbar label { display: grid; gap: 8px; }
-.moderation-toolbar select { padding: 10px; }
-.moderation-list { display: grid; gap: 20px; }
-.moderation-card { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; background: white; border: 1px solid #ddd; border-radius: 12px; }
-.moderation-card img { width: 200px; height: 160px; object-fit: contain; }
-.moderation-card p { overflow-wrap: anywhere; }
-.moderation-review { margin-top: 24px; padding: 24px; background: white; border: 1px solid #ddd; border-radius: 12px; }
-.moderation-review label { display: grid; gap: 8px; margin-bottom: 16px; }
-.moderation-review textarea { min-height: 100px; padding: 12px; font: inherit; }
-.moderation-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.moderation-page {
+  padding-block: 32px 64px;
+}
+.moderation-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  margin-block: 24px;
+}
+.moderation-toolbar label {
+  display: grid;
+  gap: 8px;
+}
+.moderation-toolbar select {
+  padding: 10px;
+}
+.moderation-list {
+  display: grid;
+  gap: 20px;
+}
+.moderation-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+}
+.moderation-card img {
+  width: 200px;
+  height: 160px;
+  object-fit: contain;
+}
+.moderation-card p {
+  overflow-wrap: anywhere;
+}
+.moderation-review {
+  margin-top: 24px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+}
+.moderation-review label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.moderation-review textarea {
+  min-height: 100px;
+  padding: 12px;
+  font: inherit;
+}
+.moderation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
