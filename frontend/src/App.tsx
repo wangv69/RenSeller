@@ -1,4 +1,4 @@
- import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import Messages from './Messages'
 import { supabase } from './lib/supabase'
@@ -10,25 +10,42 @@ type Listing = {
   id: number
   title: string
   price: string
-  category: string
+  category: string[]
   image: string
   condition: string
   seller: string
+  sellerId: string | null
+  imagePath: string | null
 }
 
 const categories = ['All listings', 'Textbooks', 'Electronics', 'Furniture', 'Clothing', 'Tickets']
+const listingCategories = categories.filter((c) => c !== 'All listings')
 
 type ListingRow = {
   id: number
   name: string
   price: number
-  category: string
+  category: string[] | string | null
   condition: string
   image_path: string | null
+  seller_id: string | null
   profiles: { display_name: string } | null
 }
 
 const PLACEHOLDER_IMAGE = 'https://placehold.co/900x700?text=No+photo'
+
+function toCategories(value: ListingRow['category']): string[] {
+  if (Array.isArray(value)) return value.filter((c) => typeof c === 'string' && c.trim())
+  if (typeof value === 'string' && value.trim()) {
+    // Handles legacy single-category rows and Postgres array literals like {Textbooks,Electronics}
+    const trimmed = value.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return trimmed.slice(1, -1).split(',').map((c) => c.replace(/^"|"$/g, '').trim()).filter(Boolean)
+    }
+    return [trimmed]
+  }
+  return []
+}
 
 function toListing(row: ListingRow): Listing {
   const imageUrl = row.image_path && supabase
@@ -38,17 +55,19 @@ function toListing(row: ListingRow): Listing {
     id: row.id,
     title: row.name,
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
-    category: row.category,
+    category: toCategories(row.category),
     condition: row.condition ?? 'Good condition',
     image: imageUrl,
     seller: row.profiles?.display_name ?? 'RPI student',
+    sellerId: row.seller_id ?? null,
+    imagePath: row.image_path,
   }
 }
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [showMessages, setShowMessages] = useState(false)
-  const [activeCategory, setActiveCategory] = useState('All listings')
+  const [activeCategories, setActiveCategories] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [favorites, setFavorites] = useState<number[]>([])
   const [showSellForm, setShowSellForm] = useState(false)
@@ -66,11 +85,14 @@ function App() {
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
-  const [newCategory, setNewCategory] = useState('Textbooks')
+  const [newCategory, setNewCategory] = useState<string[]>(['Textbooks'])
   const [newCondition, setNewCondition] = useState('Good condition')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [newImage, setNewImage] = useState<File | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const imagePreview = useMemo(() => (newImage ? URL.createObjectURL(newImage) : null), [newImage])
 
@@ -102,7 +124,7 @@ function App() {
       }
       const { data, error } = await supabase
         .from('listings')
-        .select('id, name, price, category, condition, image_path')
+        .select('id, name, price, category, condition, image_path, seller_id')
         .order('id', { ascending: false })
 
       if (error) setError(error.message)
@@ -131,13 +153,42 @@ function App() {
   }
 
   const visibleListings = listings.filter((listing) => {
-    const matchesCategory = activeCategory === 'All listings' || listing.category === activeCategory
-    const searchText = `${listing.title} ${listing.category}`.toLowerCase()
+    const matchesCategory = activeCategories.length === 0 || listing.category.some((c) => activeCategories.includes(c))
+    const searchText = `${listing.title} ${listing.category.join(' ')}`.toLowerCase()
     return matchesCategory && searchText.includes(search.toLowerCase())
   })
 
   function toggleFavorite(id: number) {
     setFavorites((current) => current.includes(id) ? current.filter((favoriteId) => favoriteId !== id) : [...current, id])
+  }
+
+  function toggleCategory(category: string) {
+  if (category === 'All listings') {
+    setActiveCategories([])
+    return
+  }
+  setActiveCategories((current) =>
+    current.includes(category)
+      ? current.filter((c) => c !== category)
+      : [...current, category]
+  )
+}
+
+  function toggleNewCategory(category: string) {
+    setNewCategory((current) =>
+      current.includes(category)
+        ? current.filter((c) => c !== category)
+        : [...current, category],
+    )
+  }
+
+  function resetSellForm() {
+    setNewTitle('')
+    setNewPrice('')
+    setNewCategory(['Textbooks'])
+    setNewCondition('Good condition')
+    setNewImage(null)
+    setFormError(null)
   }
 
   async function handleCreateListing() {
@@ -150,6 +201,13 @@ function App() {
     const price = Number(newPrice.replace('$', ''))
     if (!newTitle.trim() || !newPrice.replace('$', '').trim() || !Number.isFinite(price) || price < 0) {
       setFormError('Enter a title and a valid price.')
+      return
+    }
+
+    // Keep categories in the canonical order and drop anything unexpected
+    const chosenCategories = listingCategories.filter((c) => newCategory.includes(c))
+    if (chosenCategories.length === 0) {
+      setFormError('Choose at least one category.')
       return
     }
 
@@ -179,12 +237,12 @@ function App() {
       .insert({
         name: newTitle.trim(),
         price,
-        category: newCategory,
+        category: chosenCategories,
         condition: newCondition,
         seller_id: userData.user.id,
         image_path: imagePath,
       })
-      .select('id, name, price, category, condition, image_path')
+      .select('id, name, price, category, condition, image_path, seller_id')
       .single()
     setSaving(false)
 
@@ -197,14 +255,44 @@ function App() {
     }
 
     setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
-    setNewTitle('')
-    setNewPrice('')
-    setNewImage(null)
+    resetSellForm()
     setShowSellForm(false)
   }
 
   function closeListingDetails() {
     setSelectedListing(null)
+    setConfirmingDelete(false)
+    setDeleteError(null)
+  }
+
+  async function handleDeleteListing(listing: Listing) {
+    if (!supabase || !session) return
+    setDeleting(true)
+    setDeleteError(null)
+
+    // Filtering on seller_id too means a non-owner deletes nothing, even if RLS were misconfigured
+    const { data, error } = await supabase
+      .from('listings')
+      .delete()
+      .eq('id', listing.id)
+      .eq('seller_id', session.user.id)
+      .select('id')
+
+    if (error || !data || data.length === 0) {
+      setDeleting(false)
+      setDeleteError(error?.message ?? 'This listing could not be deleted. It may already be gone.')
+      return
+    }
+
+    // The row is gone, so a leftover photo is only wasted storage; don't block on it
+    if (listing.imagePath) {
+      await supabase.storage.from('listing-images').remove([listing.imagePath]).catch(() => {})
+    }
+
+    setListings((current) => current.filter((l) => l.id !== listing.id))
+    setFavorites((current) => current.filter((id) => id !== listing.id))
+    setDeleting(false)
+    closeListingDetails()
   }
 
   return (
@@ -266,16 +354,23 @@ function App() {
                 <button className="view-all" type="button">View all listings <span></span></button>
               </div>
               <div className="category-scroller">
-                {categories.map((category) => (
+              {categories.map((category) => {
+                const isActive =
+                  category === 'All listings'
+                    ? activeCategories.length === 0
+                    : activeCategories.includes(category)
+                return (
                   <button
                     key={category}
                     type="button"
-                    className={activeCategory === category ? 'category-chip active' : 'category-chip'}
-                    onClick={() => setActiveCategory(category)}
+                    className={isActive ? 'category-chip active' : 'category-chip'}
+                    aria-pressed={isActive}
+                    onClick={() => toggleCategory(category)}
                   >
                     {category}
                   </button>
-                ))}
+                )
+              })}
               </div>
             </section>
 
@@ -325,7 +420,7 @@ function App() {
                           <h3>{listing.title}</h3>
                           <strong>{listing.price}</strong>
                         </div>
-                        <p className="listing-meta">RPI campus <span>·</span> {listing.category}</p>
+                        <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}</p>
                         <p className="seller-line">
                           <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
                         </p>
@@ -348,7 +443,20 @@ function App() {
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
 
-      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button></div></div></div></div>}
+      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category.join(', ')}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button>{session?.user.id === selectedListing.sellerId ? (
+                confirmingDelete ? (
+                  <>
+                    <button className="cancel-button" type="button" onClick={() => setConfirmingDelete(false)} disabled={deleting}>Keep listing</button>
+                    <button className="sell-button delete-button" type="button" onClick={() => handleDeleteListing(selectedListing)} disabled={deleting}>
+                      {deleting ? 'Deleting…' : 'Yes, delete it'}
+                    </button>
+                  </>
+                ) : (
+                  <button className="cancel-button delete-button" type="button" onClick={() => setConfirmingDelete(true)}>Delete listing</button>
+                )
+              ) : (
+                <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+              )}</div>{deleteError && <p role="alert">{deleteError}</p>}</div></div></div>}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>
@@ -369,11 +477,25 @@ function App() {
             <label>Price
               <input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="$ 0.00" inputMode="decimal" />
             </label>
-            <label>Category
-              <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
-                {categories.filter((c) => c !== 'All listings').map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
+            <fieldset className="category-picker" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend>Categories <small>(pick all that fit)</small></legend>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                {listingCategories.map((c) => {
+                  const selected = newCategory.includes(c)
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      className={selected ? 'category-chip active' : 'category-chip'}
+                      aria-pressed={selected}
+                      onClick={() => toggleNewCategory(c)}
+                    >
+                      {selected ? '✓ ' : ''}{c}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
             <label>Condition
               <select value={newCondition} onChange={(e) => setNewCondition(e.target.value)}>
                 <option>New</option>
