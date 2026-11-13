@@ -10,3 +10,6 @@
 .profile-menu-item:disabled { color: var(--muted); cursor: default; }
 .auth-message { color: var(--rpi-red-dark); font-size: 13px; line-height: 1.45; margin: 18px 0 0; }
 .auth-message.success { color: #2d6a4f; }
+
+.auth-link { background: transparent; border: 0; color: var(--rpi-red-dark); font-size: 13px; margin-top: 14px; padding: 0; text-decoration: underline; }
+.auth-link:disabled { cursor: wait; opacity: .65; }

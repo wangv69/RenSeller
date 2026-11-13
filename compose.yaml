@@ -1,6 +1,9 @@
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      secrets:
+        - frontend_env
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
     depends_on:
@@ -45,3 +48,7 @@ services:
 
 volumes:
   postgres_data:
+
+secrets:
+  frontend_env:
+    file: ./frontend/.env.local
