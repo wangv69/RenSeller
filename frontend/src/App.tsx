@@ -199,7 +199,10 @@ function App() {
     if (listing.image) {
       const marker = '/listing-images/'
       const imagePath = listing.image.includes(marker) ? listing.image.split(marker)[1] : null
-      if (imagePath) await supabase.storage.from('listing-images').remove([imagePath])
+      if (imagePath) {
+        const { error: imageDeleteError } = await supabase.storage.from('listing-images').remove([imagePath])
+        if (imageDeleteError) setError(`Listing deleted, but its image could not be removed: ${imageDeleteError.message}`)
+      }
     }
     setListings((current) => current.filter((item) => item.id !== listing.id))
     setFavorites((current) => current.filter((id) => id !== listing.id))

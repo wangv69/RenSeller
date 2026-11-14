@@ -15,9 +15,12 @@ beforeEach(() => {
 })
 
 it('shows posted listings and excludes saved listings from history', async () => {
-  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[listing]} postedListings={[{ ...listing, id: 2, title: 'My textbook' }]} />)
+  const onDeleteListing = vi.fn()
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={onDeleteListing} savedListings={[listing]} postedListings={[{ ...listing, id: 2, title: 'My textbook' }]} />)
   await screen.findByRole('heading', { name: 'Profile' })
   fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
   expect(screen.getByText('My textbook')).toBeInTheDocument()
   expect(screen.queryByText('Desk lamp')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  expect(onDeleteListing).toHaveBeenCalledWith(expect.objectContaining({ title: 'My textbook', id: 2 }))
 })
