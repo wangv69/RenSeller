@@ -1,4 +1,4 @@
- import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import Messages from './Messages'
 import { supabase } from './lib/supabase'
@@ -10,22 +10,24 @@ type Listing = {
   id: number
   title: string
   price: string
-  category: string
+  category: string[]
   image: string
   condition: string
   seller: string
   sellerId: string
+  imagePath: string | null
 }
 
 const listingImageFallback = 'https://placehold.co/900x700?text=No+photo'
 
 const categories = ['All listings', 'Textbooks', 'Electronics', 'Furniture', 'Clothing', 'Tickets']
+const listingCategories = categories.filter((c) => c !== 'All listings')
 
 type ListingRow = {
   id: number
   name: string
   price: number
-  category: string
+  category: string[] | string | null
   condition: string
   seller_id: string
   image_path: string | null
@@ -39,20 +41,21 @@ function toListing(row: ListingRow, currentUserId: string | null, currentUserNam
     id: row.id,
     title: row.name,
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
-    category: row.category,
+    category: Array.isArray(row.category) ? row.category : row.category ? [row.category] : [],
     condition: row.condition ?? 'Good condition',
     image: row.image_path && supabase
       ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
       : listingImageFallback,
     seller: sellerName || (row.seller_id === currentUserId ? currentUserName : null) || 'RPI student',
     sellerId: row.seller_id,
+    imagePath: row.image_path,
   }
 }
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [showMessages, setShowMessages] = useState(false)
-  const [activeCategory, setActiveCategory] = useState('All listings')
+  const [activeCategories, setActiveCategories] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [conditionFilter, setConditionFilter] = useState('All conditions')
@@ -76,11 +79,15 @@ function App() {
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
-  const [newCategory, setNewCategory] = useState('Textbooks')
+  const [newCategory, setNewCategory] = useState<string[]>(['Textbooks'])
   const [newCondition, setNewCondition] = useState('Good condition')
   const [newImage, setNewImage] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const imagePreview = useMemo(() => (newImage ? URL.createObjectURL(newImage) : null), [newImage])
 
   useEffect(() => {
@@ -175,11 +182,11 @@ function App() {
   }
 
   const visibleListings = listings.filter((listing) => {
-    const matchesCategory = activeCategory === 'All listings' || listing.category === activeCategory
+    const matchesCategory = activeCategories.length === 0 || listing.category.some((category) => activeCategories.includes(category))
     const matchesCondition = conditionFilter === 'All conditions' || listing.condition === conditionFilter
-    const searchText = `${listing.title} ${listing.category}`.toLowerCase()
+    const searchText = `${listing.title} ${listing.category.join(' ')}`.toLowerCase()
     return matchesCategory && matchesCondition && searchText.includes(search.toLowerCase())
-    })
+  })
 
   async function toggleFavorite(id: number) {
     if (!supabase || !currentUserId) {
@@ -222,6 +229,35 @@ function App() {
     setFavorites((current) => current.filter((id) => id !== listing.id))
   }
 
+  function toggleCategory(category: string) {
+  if (category === 'All listings') {
+    setActiveCategories([])
+    return
+  }
+  setActiveCategories((current) =>
+    current.includes(category)
+      ? current.filter((c) => c !== category)
+      : [...current, category]
+  )
+}
+
+  function toggleNewCategory(category: string) {
+    setNewCategory((current) =>
+      current.includes(category)
+        ? current.filter((c) => c !== category)
+        : [...current, category],
+    )
+  }
+
+  function resetSellForm() {
+    setNewTitle('')
+    setNewPrice('')
+    setNewCategory(['Textbooks'])
+    setNewCondition('Good condition')
+    setNewImage(null)
+    setFormError(null)
+  }
+
   async function handleCreateListing() {
     setFormError(null)
     if (!supabase) {
@@ -232,6 +268,13 @@ function App() {
     const price = Number(newPrice.replace('$', ''))
     if (!newTitle.trim() || !newPrice.replace('$', '').trim() || !Number.isFinite(price) || price < 0) {
       setFormError('Enter a title and a valid price.')
+      return
+    }
+
+    // Keep categories in the canonical order and drop anything unexpected
+    const chosenCategories = listingCategories.filter((c) => newCategory.includes(c))
+    if (chosenCategories.length === 0) {
+      setFormError('Choose at least one category.')
       return
     }
 
@@ -256,19 +299,19 @@ function App() {
       }
     }
 
-  const { data, error } = await supabase
-    .from('listings')
-    .insert({
-      name: newTitle.trim(),
-      price,
-      category: newCategory,
-      condition: newCondition,
-      seller_id: userData.user.id,
-      image_path: imagePath,
-    })
-    .select('id, name, price, category, condition, seller_id, image_path')
-    .single()
-  setSaving(false)
+    const { data, error } = await supabase
+      .from('listings')
+      .insert({
+        name: newTitle.trim(),
+        price,
+        category: chosenCategories,
+        condition: newCondition,
+        seller_id: userData.user.id,
+        image_path: imagePath,
+      })
+      .select('id, name, price, category, condition, image_path, seller_id')
+      .single()
+    setSaving(false)
 
     if (error) {
       setFormError(error.message)
@@ -278,17 +321,47 @@ function App() {
       return
     }
 
-  const metadata = userData.user.user_metadata ?? {}
-  const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user.email?.split('@')[0] || null
-  setListings((current) => [toListing({ ...data, profiles: null } as ListingRow, userData.user.id, userName), ...current])
-  setNewTitle('')
-  setNewPrice('')
-  setNewImage(null)
-  setShowSellForm(false)
+    const metadata = userData.user.user_metadata ?? {}
+    const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user.email?.split('@')[0] || null
+    setListings((current) => [toListing({ ...data, profiles: null } as ListingRow, userData.user.id, userName), ...current])
+    resetSellForm()
+    setShowSellForm(false)
   }
 
   function closeListingDetails() {
     setSelectedListing(null)
+    setConfirmingDelete(false)
+    setDeleteError(null)
+  }
+
+  async function handleDeleteListing(listing: Listing) {
+    if (!supabase || !session) return
+    setDeleting(true)
+    setDeleteError(null)
+
+    // Filtering on seller_id too means a non-owner deletes nothing, even if RLS were misconfigured
+    const { data, error } = await supabase
+      .from('listings')
+      .delete()
+      .eq('id', listing.id)
+      .eq('seller_id', session.user.id)
+      .select('id')
+
+    if (error || !data || data.length === 0) {
+      setDeleting(false)
+      setDeleteError(error?.message ?? 'This listing could not be deleted. It may already be gone.')
+      return
+    }
+
+    // The row is gone, so a leftover photo is only wasted storage; don't block on it
+    if (listing.imagePath) {
+      await supabase.storage.from('listing-images').remove([listing.imagePath]).catch(() => {})
+    }
+
+    setListings((current) => current.filter((l) => l.id !== listing.id))
+    setFavorites((current) => current.filter((id) => id !== listing.id))
+    setDeleting(false)
+    closeListingDetails()
   }
 
   return (
@@ -361,16 +434,23 @@ function App() {
                 <button className="view-all" type="button">View all listings <span></span></button>
               </div>
               <div className="category-scroller">
-                {categories.map((category) => (
+              {categories.map((category) => {
+                const isActive =
+                  category === 'All listings'
+                    ? activeCategories.length === 0
+                    : activeCategories.includes(category)
+                return (
                   <button
                     key={category}
                     type="button"
-                    className={activeCategory === category ? 'category-chip active' : 'category-chip'}
-                    onClick={() => setActiveCategory(category)}
+                    className={isActive ? 'category-chip active' : 'category-chip'}
+                    aria-pressed={isActive}
+                    onClick={() => toggleCategory(category)}
                   >
                     {category}
                   </button>
-                ))}
+                )
+              })}
               </div>
             </section>
 
@@ -431,7 +511,7 @@ function App() {
                       <h3>{listing.title}</h3>
                       <strong>{listing.price}</strong>
                     </div>
-                    <p className="listing-meta">RPI campus <span>·</span> {listing.category}</p>
+                    <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}</p>
                     <p className="seller-line">
                       <button type="button" className="seller-profile-link" onClick={(event) => { event.stopPropagation(); openSellerProfile(listing.sellerId) }}>
                         <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
@@ -456,7 +536,20 @@ function App() {
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
 
-      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details"></button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><button className="seller-profile-link listing-modal-meta" type="button" onClick={() => { closeListingDetails(); openSellerProfile(selectedListing.sellerId) }}>Listed by {selectedListing.seller}</button><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button><button className="sell-button" type="button">Message seller <span></span></button></div></div></div></div>}
+      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category.join(', ')}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button>{session?.user.id === selectedListing.sellerId ? (
+                confirmingDelete ? (
+                  <>
+                    <button className="cancel-button" type="button" onClick={() => setConfirmingDelete(false)} disabled={deleting}>Keep listing</button>
+                    <button className="sell-button delete-button" type="button" onClick={() => handleDeleteListing(selectedListing)} disabled={deleting}>
+                      {deleting ? 'Deleting…' : 'Yes, delete it'}
+                    </button>
+                  </>
+                ) : (
+                  <button className="cancel-button delete-button" type="button" onClick={() => setConfirmingDelete(true)}>Delete listing</button>
+                )
+              ) : (
+                <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+              )}</div>{deleteError && <p role="alert">{deleteError}</p>}</div></div></div>}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>
@@ -477,11 +570,25 @@ function App() {
             <label>Price
               <input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="$ 0.00" inputMode="decimal" />
             </label>
-            <label>Category
-              <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
-                {categories.filter((c) => c !== 'All listings').map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
+            <fieldset className="category-picker" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend>Categories <small>(pick all that fit)</small></legend>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                {listingCategories.map((c) => {
+                  const selected = newCategory.includes(c)
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      className={selected ? 'category-chip active' : 'category-chip'}
+                      aria-pressed={selected}
+                      onClick={() => toggleNewCategory(c)}
+                    >
+                      {selected ? '✓ ' : ''}{c}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
             <label>Condition
               <select value={newCondition} onChange={(e) => setNewCondition(e.target.value)}>
                 <option>New</option>

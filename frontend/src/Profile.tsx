@@ -24,7 +24,7 @@ type SavedListing = {
   id: number
   title: string
   price: string
-  category: string
+  category: string[]
   image: string
   condition: string
   seller: string
@@ -242,7 +242,7 @@ export default function Profile({ onBack, savedListings, postedListings, onToggl
             <div className="profile-panel"><div className="profile-panel-heading"><div><p className="eyebrow">SELLING</p><h2>My listings</h2></div><span className="history-count">{postedListings.length} {postedListings.length === 1 ? 'item' : 'items'}</span></div>{postedListings.length > 0 ? <div className="history-list">{postedListings.map((listing) => <article className="history-row" key={listing.id}><div><h3>{listing.title}</h3><p>{listing.category} · {listing.condition}</p></div><div className="history-price"><strong>{listing.price}</strong><span>Active</span><button type="button" className="remove-saved-button" onClick={() => onDeleteListing(listing)}>Delete</button></div></article>)}</div> : <div className="saved-listings-empty"><strong>No listings posted yet</strong><span>Items you post will appear here.</span></div>}</div>
           </div> : <section className="profile-panel saved-listings-panel">
             <div className="profile-panel-heading"><div><p className="eyebrow">YOUR BOOKMARKS</p><h2>Saved listings</h2></div><span className="history-count">{savedListings.length} {savedListings.length === 1 ? 'item' : 'items'}</span></div>
-            {savedListings.length > 0 ? <div className="saved-listings-grid">{savedListings.map((listing) => <article className="saved-listing-row" key={listing.id}><img src={listing.image} alt="" /><div className="saved-listing-details"><h3>{listing.title}</h3><p>{listing.category} · {listing.condition} · Listed by {listing.seller}</p><strong>{listing.price}</strong></div><button className="remove-saved-button" type="button" onClick={() => onToggleSaved(listing.id)} aria-label={`Remove ${listing.title} from saved listings`}>Remove</button></article>)}</div> : <div className="saved-listings-empty"><strong>No saved listings yet</strong><span>Use the heart button on a listing to save it here.</span><button className="back-button" type="button" onClick={onBack}>Browse listings →</button></div>}
+            {savedListings.length > 0 ? <div className="saved-listings-grid">{savedListings.map((listing) => <article className="saved-listing-row" key={listing.id}><img src={listing.image} alt="" /><div className="saved-listing-details"><h3>{listing.title}</h3><p>{listing.category.join(', ')} · {listing.condition} · Listed by {listing.seller}</p><strong>{listing.price}</strong></div><button className="remove-saved-button" type="button" onClick={() => onToggleSaved(listing.id)} aria-label={`Remove ${listing.title} from saved listings`}>Remove</button></article>)}</div> : <div className="saved-listings-empty"><strong>No saved listings yet</strong><span>Use the heart button on a listing to save it here.</span><button className="back-button" type="button" onClick={onBack}>Browse listings →</button></div>}
           </section>}
         </div>
       </div>

@@ -7,7 +7,7 @@ const { client } = vi.hoisted(() => ({
 }))
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 
-const listing = { id: 1, title: 'Desk lamp', price: '$5', category: 'Furniture', image: 'lamp.png', condition: 'Good', seller: 'Test Student' }
+const listing = { id: 1, title: 'Desk lamp', price: '$5', category: ['Furniture'], image: 'lamp.png', condition: 'Good', seller: 'Test Student' }
 
 beforeEach(() => {
   vi.resetAllMocks()

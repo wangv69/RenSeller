@@ -20,8 +20,8 @@ beforeEach(() => {
   listingsQuery.select.mockReturnValue(listingsQuery)
   listingsQuery.order.mockResolvedValue({
     data: [
-      { id: 1, name: 'Calculus book', price: 12, category: 'Textbooks', condition: 'New', seller_id: 'user-1', image_path: null, profiles: null },
-      { id: 2, name: 'Desk lamp', price: 5, category: 'Furniture', condition: 'Fair', seller_id: 'user-2', image_path: null, profiles: { display_name: 'Other student' } },
+      { id: 1, name: 'Calculus book', price: 12, category: ['Textbooks'], condition: 'New', seller_id: 'user-1', image_path: null, profiles: null },
+      { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, profiles: { display_name: 'Other student' } },
     ],
     error: null,
   })
