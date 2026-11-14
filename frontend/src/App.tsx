@@ -4,7 +4,7 @@ import Messages from './Messages'
 import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
-import Profile, { SellerProfile } from './Profile'
+import Profile, { SellerProfile, type Purchase } from './Profile'
 
 type Listing = {
   id: number
@@ -66,6 +66,7 @@ function App() {
   const [listings, setListings] = useState<Listing[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserProfile, setCurrentUserProfile] = useState({ fullName: '', email: '', dorm: '' })
+  const [purchases, setPurchases] = useState<Purchase[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState<'home' | 'profile' | 'seller-profile'>(
@@ -129,6 +130,19 @@ function App() {
           .eq('user_id', userId)
         if (favoritesError) setError(favoritesError.message)
         else setFavorites((favoriteRows ?? []).map((favorite) => favorite.listing_id))
+        const { data: purchaseRows, error: purchasesError } = await supabase
+          .from('purchases')
+          .select('id, title, seller_name, amount, purchased_at, status')
+          .eq('buyer_id', userId)
+        if (purchasesError) setError(purchasesError.message)
+        else setPurchases([...(purchaseRows ?? [])].sort((a, b) => b.purchased_at.localeCompare(a.purchased_at)).map((purchase) => ({
+          id: String(purchase.id),
+          title: purchase.title,
+          seller: purchase.seller_name || 'RPI student',
+          date: new Date(purchase.purchased_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+          price: `$${Number(purchase.amount).toFixed(2).replace(/\.00$/, '')}`,
+          status: purchase.status,
+        })))
       }
       setLoading(false)
     }
@@ -311,6 +325,7 @@ function App() {
             postedListings={listings.filter((listing) => listing.sellerId === currentUserId)}
             onToggleSaved={toggleFavorite}
             onDeleteListing={deleteListing}
+            purchases={purchases}
           />
         ) : currentPage === 'seller-profile' && selectedSellerId ? (
           <SellerProfile
