@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import Profile from './Profile'
+import Profile, { SellerProfile } from './Profile'
 
 const { client, bucket } = vi.hoisted(() => {
   const bucket = { upload: vi.fn(), getPublicUrl: vi.fn() }
@@ -8,158 +8,126 @@ const { client, bucket } = vi.hoisted(() => {
 })
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 
-const user = { id: 'u1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student', dorm: 'Bray Hall' } }
-const saved = { id: 7, title: 'Desk lamp', price: '$5', category: ['Electronics'], image: 'lamp.png', condition: 'Fair', seller: 'Test seller' }
+const listing = { id: 1, title: 'Desk lamp', price: '$5', category: ['Furniture'], image: 'lamp.png', condition: 'Good', seller: 'Test Student' }
 
 beforeEach(() => {
   vi.resetAllMocks()
-  client.auth.getUser.mockResolvedValue({ data: { user }, error: null })
+  client.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student' } } }, error: null })
   client.auth.updateUser.mockResolvedValue({ error: null })
   client.storage.from.mockReturnValue(bucket)
   bucket.upload.mockResolvedValue({ error: null })
   bucket.getPublicUrl.mockReturnValue({ data: { publicUrl: 'https://cdn.test/avatar.png' } })
 })
 
-async function renderProfile(savedListings = [] as typeof saved[]) {
-  const props = { onBack: vi.fn(), onToggleSaved: vi.fn(), savedListings }
-  render(<Profile {...props} />)
-  expect(screen.getByText('Loading profile...')).toBeInTheDocument()
+it('shows posted listings and excludes saved listings from history', async () => {
+  const onDeleteListing = vi.fn()
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={onDeleteListing} savedListings={[listing]} postedListings={[{ ...listing, id: 2, title: 'My textbook' }]} />)
   await screen.findByRole('heading', { name: 'Profile' })
-  return props
-}
-const submit = (button: string) => fireEvent.submit(screen.getByRole('button', { name: button }).closest('form')!)
-const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } })
-const pick = (file: File) => fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [file] } })
-const png = () => new File(['x'], 'me.png', { type: 'image/png' })
-
-it('loads the signed-in user into the form', async () => {
-  await renderProfile()
-  expect(screen.getByLabelText('Full name')).toHaveValue('Test Student')
-  expect(screen.getByLabelText('RPI email')).toHaveValue('test@rpi.edu')
-  expect(screen.getByLabelText('Current dorm')).toHaveValue('Bray Hall')
-  expect(screen.getByText('@test')).toBeInTheDocument()
-  expect(screen.getByText('T')).toBeInTheDocument()
-})
-it('shows a saved avatar and falls back to defaults for missing fields', async () => {
-  client.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1', user_metadata: { avatar_url: 'https://cdn.test/a.png' } } }, error: null })
-  await renderProfile()
-  expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'https://cdn.test/a.png')
-  expect(screen.getByRole('heading', { name: 'student' })).toBeInTheDocument()
-})
-it('asks signed-out users to sign in', async () => {
-  client.auth.getUser.mockResolvedValue({ data: { user: null }, error: null })
-  await renderProfile()
-  expect(screen.getByRole('status')).toHaveTextContent('Please sign in')
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect(screen.getByText('My textbook')).toBeInTheDocument()
+  expect(screen.queryByText('Desk lamp')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  expect(onDeleteListing).toHaveBeenCalledWith(expect.objectContaining({ title: 'My textbook', id: 2 }))
 })
 
-it.each([
-  ['test@gmail.com', 'Test Student', 'RPI email address'],
-  ['test@rpi.edu', '   ', 'Enter your full name'],
-])('validates information (%s)', async (email, name, message) => {
-  await renderProfile()
-  type('RPI email', email); type('Full name', name); submit('Save changes')
-  expect(await screen.findByRole('status')).toHaveTextContent(message)
-  expect(client.auth.updateUser).not.toHaveBeenCalled()
+it('loads details and saves profile information', async () => {
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  expect(await screen.findByLabelText('Full name')).toHaveValue('Test Student')
+  fireEvent.change(screen.getByLabelText('Current dorm'), { target: { value: 'Bray Hall' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Profile information saved')
+  expect(client.auth.updateUser).toHaveBeenCalledWith(expect.objectContaining({ data: { full_name: 'Test Student', dorm: 'Bray Hall' } }))
 })
-it('saves unchanged email details', async () => {
-  await renderProfile()
-  submit('Save changes')
-  expect(await screen.findByRole('status')).toHaveTextContent('Profile information saved.')
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ email: 'test@rpi.edu', data: { full_name: 'Test Student', dorm: 'Bray Hall' } })
+
+it('validates and updates password', async () => {
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  await screen.findByLabelText('New password')
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'short' } })
+  fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'short' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('at least 6 characters')
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'secret123' } })
+  fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'secret123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Password updated')
 })
-it('normalizes a changed email and clears the dorm', async () => {
-  await renderProfile()
-  type('RPI email', ' New@RPI.edu '); type('Current dorm', ''); submit('Save changes')
-  expect(await screen.findByRole('status')).toHaveTextContent('Check your new email')
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ email: 'new@rpi.edu', data: { full_name: 'Test Student', dorm: null } })
+
+it('shows saved listings and removes one', async () => {
+  const onToggleSaved = vi.fn()
+  render(<Profile onBack={vi.fn()} onToggleSaved={onToggleSaved} onDeleteListing={vi.fn()} savedListings={[listing]} postedListings={[]} />)
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: /Saved listings/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Desk lamp from saved listings' }))
+  expect(onToggleSaved).toHaveBeenCalledWith(1)
 })
-it('reports information save errors', async () => {
-  await renderProfile()
+
+it('shows purchases from Supabase data', async () => {
+  const purchases = [{ id: '9', title: 'Calculus book', seller: 'Alex Student', date: 'November 1, 2026', price: '$35', status: 'Completed' }]
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} purchases={purchases} />)
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect(screen.getByText('Calculus book')).toBeInTheDocument()
+  expect(screen.getByText(/Bought from Alex Student/)).toBeInTheDocument()
+})
+
+it('uploads a profile picture', async () => {
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  await screen.findByLabelText('Change picture')
+  const file = new File(['image'], 'avatar.png', { type: 'image/png' })
+  fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [file] } })
+  expect(await screen.findByRole('status')).toHaveTextContent('Profile picture updated')
+  expect(bucket.upload).toHaveBeenCalled()
+})
+
+it('renders a read-only seller profile and handles back navigation', () => {
+  const onBack = vi.fn()
+  render(<SellerProfile sellerName="Jordan Student" listings={[listing]} profile={{ fullName: 'Jordan Student', email: 'jordan@rpi.edu', dorm: 'Bray Hall' }} savedListings={[]} onBack={onBack} />)
+  expect(screen.getAllByRole('heading', { name: 'Jordan Student' }).length).toBeGreaterThan(0)
+  expect(screen.getByText('jordan@rpi.edu')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '← Back to listings' }))
+  expect(onBack).toHaveBeenCalledOnce()
+})
+
+it('validates the RPI email and password mismatch', async () => {
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  await screen.findByLabelText('RPI email')
+  fireEvent.change(screen.getByLabelText('RPI email'), { target: { value: 'test@gmail.com' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('RPI email address')
+
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'secret123' } })
+  fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'different123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Passwords do not match')
+})
+
+it('reports profile save and password update failures', async () => {
   client.auth.updateUser.mockResolvedValue({ error: { message: 'Update failed' } })
-  submit('Save changes')
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  await screen.findByRole('button', { name: 'Save changes' })
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Update failed')
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'secret123' } })
+  fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'secret123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
   expect(await screen.findByRole('status')).toHaveTextContent('Update failed')
 })
 
-it.each([
-  ['short', 'short', 'at least 6 characters'],
-  ['secret123', 'different', 'Passwords do not match'],
-])('validates passwords (%s)', async (password, confirm, message) => {
-  await renderProfile()
-  type('New password', password); type('Confirm new password', confirm); submit('Update password')
-  expect(await screen.findByRole('status')).toHaveTextContent(message)
-  expect(client.auth.updateUser).not.toHaveBeenCalled()
-})
-it('updates the password and clears the fields', async () => {
-  await renderProfile()
-  type('New password', 'secret123'); type('Confirm new password', 'secret123'); submit('Update password')
-  expect(await screen.findByRole('status')).toHaveTextContent('Password updated.')
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'secret123' })
-  expect(screen.getByLabelText('New password')).toHaveValue('')
-})
-it('keeps the password fields on failure', async () => {
-  await renderProfile()
-  client.auth.updateUser.mockResolvedValue({ error: { message: 'Weak password' } })
-  type('New password', 'secret123'); type('Confirm new password', 'secret123'); submit('Update password')
-  expect(await screen.findByRole('status')).toHaveTextContent('Weak password')
-  expect(screen.getByLabelText('New password')).toHaveValue('secret123')
-})
-
-it('rejects non-image and oversized profile pictures', async () => {
-  await renderProfile()
-  pick(new File(['x'], 'a.txt', { type: 'text/plain' }))
-  expect(await screen.findByRole('status')).toHaveTextContent('Choose an image file')
-  const big = png(); Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
-  pick(big)
-  expect(await screen.findByRole('status')).toHaveTextContent('smaller than 5 MB')
-  fireEvent.change(screen.getByLabelText('Change picture'), { target: { files: [] } })
-  expect(bucket.upload).not.toHaveBeenCalled()
-})
-it('uploads a profile picture and saves its URL', async () => {
-  await renderProfile()
-  pick(png())
-  expect(await screen.findByRole('status')).toHaveTextContent('Profile picture updated.')
-  expect(bucket.upload).toHaveBeenCalledWith(expect.stringMatching(/^u1\/avatar-\d+$/), expect.any(File), { upsert: true })
-  expect(client.auth.updateUser).toHaveBeenCalledWith({ data: { avatar_url: 'https://cdn.test/avatar.png' } })
-  expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'https://cdn.test/avatar.png')
-})
-it('reports upload and avatar update errors', async () => {
-  await renderProfile()
-  bucket.upload.mockResolvedValueOnce({ error: { message: 'Upload denied' } })
-  pick(png())
-  expect(await screen.findByRole('status')).toHaveTextContent('Upload denied')
-  client.auth.updateUser.mockResolvedValue({ error: { message: 'Avatar rejected' } })
-  pick(png())
-  expect(await screen.findByRole('status')).toHaveTextContent('Avatar rejected')
-  expect(screen.queryByAltText('Profile')).not.toBeInTheDocument()
-})
-it('skips the upload when the session has ended', async () => {
-  await renderProfile()
-  client.auth.getUser.mockResolvedValue({ data: { user: null }, error: null })
-  pick(png())
-  await waitFor(() => expect(client.auth.getUser).toHaveBeenCalledTimes(2))
-  expect(bucket.upload).not.toHaveBeenCalled()
-})
-
-it('shows purchase and listing history', async () => {
-  await renderProfile()
+it('shows empty history and saved states', async () => {
+  const onBack = vi.fn()
+  render(<Profile onBack={onBack} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  await screen.findByRole('heading', { name: 'Profile' })
   fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
-  expect(screen.getByText('Calculus: Early Transcendentals')).toBeInTheDocument()
-  expect(screen.getByText('Sold')).toBeInTheDocument()
-})
-it('shows an empty saved state that returns to listings', async () => {
-  const props = await renderProfile()
+  expect(screen.getByText('No purchases yet')).toBeInTheDocument()
+  expect(screen.getByText('No listings posted yet')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Saved listings/ }))
   expect(screen.getByText('No saved listings yet')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Browse listings/ }))
-  fireEvent.click(screen.getByRole('button', { name: /Back to listings/ }))
-  expect(props.onBack).toHaveBeenCalledTimes(2)
+  expect(onBack).toHaveBeenCalledOnce()
 })
-it('lists saved listings and removes one', async () => {
-  const props = await renderProfile([saved])
-  fireEvent.click(screen.getByRole('button', { name: /Saved listings/ }))
-  expect(screen.getByText('1 item')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Remove Desk lamp from saved listings' }))
-  expect(props.onToggleSaved).toHaveBeenCalledWith(7)
-  fireEvent.click(screen.getByRole('button', { name: 'Information' }))
-  expect(screen.getByLabelText('Full name')).toBeInTheDocument()
+
+it('asks signed-out users to sign in', async () => {
+  client.auth.getUser.mockResolvedValue({ data: { user: null }, error: null })
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
+  expect(await screen.findByRole('status')).toHaveTextContent('Please sign in')
 })

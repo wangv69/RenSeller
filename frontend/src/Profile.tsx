@@ -5,7 +5,19 @@ import './Profile.css'
 type ProfileProps = {
   onBack: () => void
   savedListings: SavedListing[]
+  postedListings: SavedListing[]
   onToggleSaved: (id: number) => void
+  onDeleteListing: (listing: SavedListing) => void
+  purchases?: Purchase[]
+}
+
+export type Purchase = {
+  id: string
+  title: string
+  seller: string
+  date: string
+  price: string
+  status: string
 }
 
 type SavedListing = {
@@ -16,6 +28,15 @@ type SavedListing = {
   image: string
   condition: string
   seller: string
+  sellerId?: string
+}
+
+type SellerProfileProps = {
+  sellerName: string
+  listings: SavedListing[]
+  profile?: { fullName: string; email: string; dorm: string }
+  savedListings: SavedListing[]
+  onBack: () => void
 }
 
 type Feedback = {
@@ -23,19 +44,52 @@ type Feedback = {
   type: 'error' | 'success'
 }
 
-const dormOptions = ['North Hall', 'Bray Hall', 'Nason Hall', 'Barton Hall']
+const dormOptions = ['Barton Hall', 'Blitman Residence Commons', 'Bray Hall', 'BARH', 'Cary Hall', 'Crocket Hall', 'Davison/Nugent Hall', 'E-Complex', 'Hall Hall', 'Nason Hall', 'North Hall', 'Polytechnic Apartments', 'Quad', 'RAHP A', 'RAHP B', 'Sharp Hall', 'Stacwyck Apartments', 'Warren Hall']
 
-const purchases = [
-  { title: 'Calculus: Early Transcendentals', seller: 'Evan T.', date: 'September 18, 2026', price: '$35', status: 'Completed' },
-  { title: 'Sony noise-canceling headphones', seller: 'Priya S.', date: 'August 29, 2026', price: '$90', status: 'Completed' },
-]
+export function SellerProfile({ sellerName, listings, profile, savedListings, onBack }: SellerProfileProps) {
+  const purchases: Purchase[] = []
+  const fullName = profile?.fullName || sellerName
+  const email = profile?.email || 'Not provided'
+  const dorm = profile?.dorm || 'Not provided'
+  return (
+    <section className="profile-page page-width" aria-labelledby="seller-profile-title">
+      <div className="profile-page-header">
+        <button className="back-button" type="button" onClick={onBack}>← Back to listings</button>
+        <p className="eyebrow">RPI STUDENT</p>
+        <h1 id="seller-profile-title">{sellerName}</h1>
+        <p className="profile-subtitle">Listings from this RenSeller member.</p>
+      </div>
+      <div className="profile-content">
+        <section className="profile-panel profile-form">
+          <div className="profile-panel-heading"><div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName}</h2></div><strong>★ 4.8 <span className="history-count">(24 ratings)</span></strong></div>
+          <div className="profile-form-grid"><p><strong>RPI email</strong><br />{email}</p><p><strong>Current dorm</strong><br />{dorm}</p></div>
+        </section>
+        <section className="profile-panel">
+          <div className="profile-panel-heading"><div><p className="eyebrow">PURCHASES</p><h2>Purchase history</h2></div><span className="history-count">{purchases.length} {purchases.length === 1 ? 'item' : 'items'}</span></div>
+          {purchases.length > 0 ? <div className="history-list">{purchases.map((purchase) => <article className="history-row" key={purchase.id}><div><h3>{purchase.title}</h3><p>Bought from {purchase.seller} · {purchase.date}</p></div><div className="history-price"><strong>{purchase.price}</strong><span>{purchase.status}</span></div></article>)}</div> : <div className="saved-listings-empty"><strong>No purchases yet</strong><span>Completed purchases will appear here.</span></div>}
+        </section>
+        <section className="profile-panel saved-listings-panel">
+          <div className="profile-panel-heading">
+            <div><p className="eyebrow">MARKETPLACE ACTIVITY</p><h2>Listings</h2></div>
+            <span className="history-count">{listings.length} {listings.length === 1 ? 'item' : 'items'}</span>
+          </div>
+          {listings.length > 0 ? <div className="saved-listings-grid">{listings.map((listing) => (
+            <article className="saved-listing-row" key={listing.id}>
+              <img src={listing.image} alt="" />
+              <div className="saved-listing-details"><h3>{listing.title}</h3><p>{listing.category} · {listing.condition}</p><strong>{listing.price}</strong></div>
+            </article>
+          ))}</div> : <div className="saved-listings-empty"><strong>No active listings</strong><span>This seller has not posted any listings yet.</span></div>}
+        </section>
+        <section className="profile-panel saved-listings-panel">
+          <div className="profile-panel-heading"><div><p className="eyebrow">BOOKMARKS</p><h2>Saved listings</h2></div><span className="history-count">{savedListings.length} items</span></div>
+          {savedListings.length > 0 ? <div className="history-list">{savedListings.map((listing) => <article className="history-row" key={listing.id}><div><h3>{listing.title}</h3><p>{listing.category} · {listing.condition}</p></div><strong>{listing.price}</strong></article>)}</div> : <div className="saved-listings-empty"><strong>No saved listings</strong><span>Saved listings will appear here.</span></div>}
+        </section>
+      </div>
+    </section>
+  )
+}
 
-const listings = [
-  { title: 'MacBook Air M2, 13-inch', date: 'September 24, 2026', price: '$650', status: 'Active' },
-  { title: 'Vintage varsity jacket', date: 'September 2, 2026', price: '$48', status: 'Sold' },
-]
-
-export default function Profile({ onBack, savedListings, onToggleSaved }: ProfileProps) {
+export default function Profile({ onBack, savedListings, postedListings, onToggleSaved, onDeleteListing, purchases = [] }: ProfileProps) {
   const [profileImage, setProfileImage] = useState('')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -171,7 +225,7 @@ export default function Profile({ onBack, savedListings, onToggleSaved }: Profil
           {activeSection === 'information' ? <>
             <div className="profile-panel profile-identity-panel">
               <div className="profile-picture-wrap"><div className="profile-picture">{profileImage ? <img src={profileImage} alt="Profile" /> : initial}</div><label className="upload-picture">Change picture<input type="file" accept="image/*" onChange={uploadProfileImage} /></label></div>
-              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p></div>
+              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p><p className="profile-username">★ 4.8 · 24 ratings</p></div>
             </div>
 
             <form className="profile-panel profile-form" onSubmit={saveInformation}>
@@ -184,8 +238,8 @@ export default function Profile({ onBack, savedListings, onToggleSaved }: Profil
               <div className="profile-form-grid"><label>New password<input required minLength={6} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" /></label><label>Confirm new password<input required minLength={6} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" /></label></div>
             </form>
           </> : activeSection === 'history' ? <div className="history-stack">
-            <div className="profile-panel"><div className="profile-panel-heading"><div><p className="eyebrow">PURCHASES</p><h2>Purchase history</h2></div><span className="history-count">{purchases.length} items</span></div><div className="history-list">{purchases.map((purchase) => <article className="history-row" key={purchase.title}><div><h3>{purchase.title}</h3><p>Bought from {purchase.seller} · {purchase.date}</p></div><div className="history-price"><strong>{purchase.price}</strong><span>{purchase.status}</span></div></article>)}</div></div>
-            <div className="profile-panel"><div className="profile-panel-heading"><div><p className="eyebrow">SELLING</p><h2>Listing history</h2></div><span className="history-count">{listings.length} items</span></div><div className="history-list">{listings.map((listing) => <article className="history-row" key={listing.title}><div><h3>{listing.title}</h3><p>Listed on {listing.date}</p></div><div className="history-price"><strong>{listing.price}</strong><span className={listing.status === 'Sold' ? 'history-status sold' : 'history-status'}>{listing.status}</span></div></article>)}</div></div>
+            <div className="profile-panel"><div className="profile-panel-heading"><div><p className="eyebrow">PURCHASES</p><h2>Purchase history</h2></div><span className="history-count">{purchases.length} {purchases.length === 1 ? 'item' : 'items'}</span></div>{purchases.length > 0 ? <div className="history-list">{purchases.map((purchase) => <article className="history-row" key={purchase.id}><div><h3>{purchase.title}</h3><p>Bought from {purchase.seller} · {purchase.date}</p></div><div className="history-price"><strong>{purchase.price}</strong><span>{purchase.status}</span></div></article>)}</div> : <div className="saved-listings-empty"><strong>No purchases yet</strong><span>Completed purchases will appear here.</span></div>}</div>
+            <div className="profile-panel"><div className="profile-panel-heading"><div><p className="eyebrow">SELLING</p><h2>My listings</h2></div><span className="history-count">{postedListings.length} {postedListings.length === 1 ? 'item' : 'items'}</span></div>{postedListings.length > 0 ? <div className="history-list">{postedListings.map((listing) => <article className="history-row" key={listing.id}><div><h3>{listing.title}</h3><p>{listing.category} · {listing.condition}</p></div><div className="history-price"><strong>{listing.price}</strong><span>Active</span><button type="button" className="remove-saved-button" onClick={() => onDeleteListing(listing)}>Delete</button></div></article>)}</div> : <div className="saved-listings-empty"><strong>No listings posted yet</strong><span>Items you post will appear here.</span></div>}</div>
           </div> : <section className="profile-panel saved-listings-panel">
             <div className="profile-panel-heading"><div><p className="eyebrow">YOUR BOOKMARKS</p><h2>Saved listings</h2></div><span className="history-count">{savedListings.length} {savedListings.length === 1 ? 'item' : 'items'}</span></div>
             {savedListings.length > 0 ? <div className="saved-listings-grid">{savedListings.map((listing) => <article className="saved-listing-row" key={listing.id}><img src={listing.image} alt="" /><div className="saved-listing-details"><h3>{listing.title}</h3><p>{listing.category.join(', ')} · {listing.condition} · Listed by {listing.seller}</p><strong>{listing.price}</strong></div><button className="remove-saved-button" type="button" onClick={() => onToggleSaved(listing.id)} aria-label={`Remove ${listing.title} from saved listings`}>Remove</button></article>)}</div> : <div className="saved-listings-empty"><strong>No saved listings yet</strong><span>Use the heart button on a listing to save it here.</span><button className="back-button" type="button" onClick={onBack}>Browse listings →</button></div>}
