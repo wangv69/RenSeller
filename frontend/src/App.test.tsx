@@ -1,17 +1,25 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { useEffect } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
-const { client, listingsQuery, favoritesQuery, bucket } = vi.hoisted(() => {
-  const listingsQuery = { insert: vi.fn(), select: vi.fn(), order: vi.fn(), single: vi.fn(), delete: vi.fn(), eq: vi.fn() }
-  const favoritesQuery = { select: vi.fn(), eq: vi.fn() }
+const { client, listingsQuery, favoritesQuery, bucket, favoriteDeleteChain } = vi.hoisted(() => {
+  const listingsQuery = { insert: vi.fn(), select: vi.fn(), order: vi.fn(), single: vi.fn(), delete: vi.fn(), eq: vi.fn(), then: vi.fn() }
+  const favoritesQuery = { select: vi.fn(), eq: vi.fn(), insert: vi.fn(), delete: vi.fn() }
   const bucket = { upload: vi.fn(), remove: vi.fn(), getPublicUrl: vi.fn() }
+  const favoriteDeleteChain = { eq: vi.fn() }
+  favoriteDeleteChain.eq.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
   const client = { auth: { getUser: vi.fn() }, from: vi.fn(), storage: { from: vi.fn() } }
-  return { client, listingsQuery, favoritesQuery, bucket }
+  return { client, listingsQuery, favoritesQuery, bucket, favoriteDeleteChain }
 })
 
 vi.mock('./lib/supabase', () => ({ supabase: client }))
-vi.mock('./Auth', () => ({ default: () => <button type="button">Account</button> }))
+vi.mock('./Auth', () => ({
+  default: function TestAuth({ onProfileOpen, onSessionChange }: { onProfileOpen: () => void; onSessionChange: (session: unknown) => void }) {
+    useEffect(() => onSessionChange({ user: { id: 'user-1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student' } } }), [onSessionChange])
+    return <button type="button" onClick={onProfileOpen}>Account</button>
+  },
+}))
 vi.mock('./Messages', () => ({ default: () => null }))
 
 beforeEach(() => {
@@ -26,10 +34,27 @@ beforeEach(() => {
     error: null,
   })
   favoritesQuery.select.mockReturnValue(favoritesQuery)
-  favoritesQuery.eq.mockResolvedValue({ data: [], error: null })
+  favoritesQuery.eq.mockImplementation((field: string) => Promise.resolve(field === 'listing_id'
+    ? { data: [], error: null }
+    : { data: [{ id: 9, title: 'Calculus book', seller_name: 'Alex Student', amount: 35, purchased_at: '2026-11-01T12:00:00Z', status: 'Completed' }], error: null }))
+  favoritesQuery.insert.mockResolvedValue({ error: null })
+  favoriteDeleteChain.eq.mockReset()
+  favoriteDeleteChain.eq.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+  favoritesQuery.delete.mockReturnValue(favoriteDeleteChain)
+  listingsQuery.delete.mockReturnValue(listingsQuery)
+  listingsQuery.eq.mockImplementation(() => listingsQuery)
+  listingsQuery.then.mockImplementation((resolve) => Promise.resolve({ data: [{ id: 1 }], error: null }).then(resolve))
+  listingsQuery.insert.mockReturnValue(listingsQuery)
+  listingsQuery.single.mockResolvedValue({ data: { id: 3, name: 'New book', price: 15, category: ['Textbooks'], condition: 'Good condition', seller_id: 'user-1', image_path: null }, error: null })
   client.from.mockImplementation((table: string) => table === 'listings' ? listingsQuery : favoritesQuery)
   client.storage.from.mockReturnValue(bucket)
+  bucket.upload.mockResolvedValue({ error: null })
+  bucket.remove.mockResolvedValue({ error: null })
+  bucket.getPublicUrl.mockImplementation((path: string) => ({ data: { publicUrl: `https://cdn.test/${path}` } }))
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn().mockReturnValue('blob:preview'), revokeObjectURL: vi.fn() }))
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 it('filters listings by category and condition', async () => {
   render(<App />)
@@ -46,4 +71,162 @@ it('restores saved listings after loading', async () => {
   favoritesQuery.eq.mockResolvedValue({ data: [{ listing_id: 1 }], error: null })
   render(<App />)
   await waitFor(() => expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument())
+})
+
+it('searches listings and clears the search', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.change(screen.getByLabelText('Search listings'), { target: { value: 'lamp' } })
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+  expect(screen.getByText('Calculus book')).toBeInTheDocument()
+})
+
+it('toggles favorites and shows listing details', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getAllByRole('button', { name: 'Save listing' })[0])
+  expect(favoritesQuery.insert).toHaveBeenCalledWith({ user_id: 'user-1', listing_id: 1 })
+  fireEvent.click(screen.getByText('Calculus book'))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Close listing details' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+it('validates and creates a listing', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('valid price')
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'New book' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '15' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByText('New book')).toBeInTheDocument()
+  expect(listingsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ name: 'New book', price: 15 }))
+})
+
+it('shows a seller profile and returns to listings', async () => {
+  render(<App />)
+  const links = await screen.findAllByRole('button', { name: /Listed by Other student/ })
+  fireEvent.click(links[links.length - 1])
+  expect((await screen.findAllByRole('heading', { name: 'Other student' })).length).toBeGreaterThan(0)
+  fireEvent.click(screen.getByRole('button', { name: '← Back to listings' }))
+  expect(await screen.findByText('Calculus book')).toBeInTheDocument()
+})
+
+it('deletes an owned listing from the profile', async () => {
+  vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  await waitFor(() => expect(listingsQuery.delete).toHaveBeenCalled())
+})
+
+it('toggles category filters and requires at least one selling category', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: 'Textbooks' }))
+  expect(screen.getByText('Calculus book')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'All listings' }))
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'New book' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '15' } })
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.click(dialog.getByRole('button', { name: /Textbooks/ }))
+  fireEvent.click(dialog.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('at least one category')
+})
+
+it('uploads a listing image and creates the listing', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'Lamp bundle' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '20' } })
+  fireEvent.change(screen.getByLabelText('Listing image'), { target: { files: [new File(['x'], 'lamp.png', { type: 'image/png' })] } })
+  listingsQuery.single.mockResolvedValue({ data: { id: 4, name: 'Lamp bundle', price: 20, category: ['Textbooks'], condition: 'Good condition', seller_id: 'user-1', image_path: 'user-1/lamp.png' }, error: null })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByText('Lamp bundle')).toBeInTheDocument()
+  expect(bucket.upload).toHaveBeenCalled()
+})
+
+it('shows listing insert and upload failures', async () => {
+  bucket.upload.mockResolvedValue({ error: { message: 'Upload failed' } })
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'Lamp' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '10' } })
+  fireEvent.change(screen.getByLabelText('Listing image'), { target: { files: [new File(['x'], 'lamp.png', { type: 'image/png' })] } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Upload failed')
+})
+
+it('allows cancellation before deleting an owned listing', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByText('Calculus book'))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete listing' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Keep listing' }))
+  expect(screen.queryByRole('button', { name: 'Yes, delete it' })).not.toBeInTheDocument()
+})
+
+it('loads purchase history into the profile', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect((await screen.findAllByText('Calculus book')).length).toBeGreaterThan(0)
+})
+
+it('rejects invalid images and oversized listing images', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  const image = screen.getByLabelText('Photo')
+  fireEvent.change(image, { target: { files: [new File(['x'], 'note.txt', { type: 'text/plain' })] } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('JPEG, PNG, or WebP')
+  const big = new File(['x'], 'big.png', { type: 'image/png' })
+  Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
+  fireEvent.change(image, { target: { files: [big] } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('under 5 MB')
+})
+
+it('removes a saved favorite and reports favorite failures', async () => {
+  favoritesQuery.eq.mockResolvedValue({ data: [{ listing_id: 1 }], error: null })
+  render(<App />)
+  await screen.findByRole('button', { name: 'Remove from favorites' })
+  fireEvent.click(screen.getByRole('button', { name: 'Remove from favorites' }))
+  favoritesQuery.insert.mockResolvedValue({ error: { message: 'Save failed' } })
+  const saveButtons = screen.getAllByRole('button', { name: 'Save listing' })
+  fireEvent.click(saveButtons[saveButtons.length - 1])
+  expect(await screen.findByText('Save failed')).toBeInTheDocument()
+})
+
+it('reports listing insert failures and preserves the form', async () => {
+  listingsQuery.single.mockResolvedValue({ data: null, error: { message: 'Insert failed' } })
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'New lamp' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '20' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Insert failed')
+  expect(screen.getByLabelText('Item title')).toHaveValue('New lamp')
+})
+
+it('confirms deletion from the listing modal', async () => {
+  listingsQuery.then.mockImplementation((resolve) => Promise.resolve({ data: [], error: null }).then(resolve))
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByText('Calculus book'))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete listing' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
 })
