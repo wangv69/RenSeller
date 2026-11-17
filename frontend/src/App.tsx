@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
 import Profile from './Profile'
+import { useListingChanges } from './useListingChanges'
 
 type Listing = {
   id: number
@@ -115,24 +116,34 @@ function App() {
     setNewImage(file)
   }
 
-  useEffect(() => {
-    async function loadListings() {
-      if (!supabase) {
-        setError('Listings are unavailable. Supabase is not configured.')
-        setLoading(false)
-        return
-      }
-      const { data, error } = await supabase
-        .from('listings')
-        .select('id, name, price, category, condition, image_path, seller_id')
-        .order('id', { ascending: false })
-
-      if (error) setError(error.message)
-      else setListings((data as unknown as ListingRow[]).map(toListing))
+  const loadListings = useCallback(async () => {
+    if (!supabase) {
+      setError('Listings are unavailable. Supabase is not configured.')
       setLoading(false)
+      return
     }
-    loadListings()
+    const { data, error } = await supabase
+      .from('listings')
+      .select('id, name, price, category, condition, image_path, seller_id')
+      .order('id', { ascending: false })
+
+    if (error) setError(error.message)
+    else setListings((data as unknown as ListingRow[]).map(toListing))
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadListings()
+  }, [loadListings])
+
+  useListingChanges({
+    onInserted: () => { void loadListings() },
+    onDeleted: (id) => {
+      setListings((current) => current.filter((listing) => listing.id !== id))
+      setSelectedListing((current) => (current?.id === id ? null : current))
+    },
+  })
 
   useEffect(() => {
     function handleHashChange() {

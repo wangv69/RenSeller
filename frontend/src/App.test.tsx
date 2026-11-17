@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 import { query, session } from './test/client'
 
-const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), auth: { getUser: vi.fn() }, storage: { from: vi.fn() } } }))
+const { client } = vi.hoisted(() => ({ client: { from: vi.fn(), auth: { getUser: vi.fn() }, storage: { from: vi.fn() }, channel: vi.fn(), removeChannel: vi.fn() } }))
+const changeHandlers: Record<string, (payload: unknown) => void> = {}
+const changeChannel = { on: vi.fn(), subscribe: vi.fn() }
 const bucket = { upload: vi.fn(), remove: vi.fn(), getPublicUrl: vi.fn() }
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 vi.mock('./Auth', () => ({ default: function TestAuth({ onSessionChange }: { onSessionChange: (value: unknown) => void }) {
@@ -21,6 +23,9 @@ beforeEach(() => {
   client.from.mockReturnValue(query({ data: rows, error: null }))
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'self' } } })
   client.storage.from.mockReturnValue(bucket)
+  changeChannel.on.mockImplementation((_type: string, filter: { event: string }, callback: (payload: unknown) => void) => { changeHandlers[filter.event] = callback; return changeChannel })
+  changeChannel.subscribe.mockReturnValue(changeChannel)
+  client.channel.mockReturnValue(changeChannel)
   bucket.upload.mockResolvedValue({ error: null })
   bucket.remove.mockResolvedValue({ error: null })
   bucket.getPublicUrl.mockImplementation((path: string) => ({ data: { publicUrl: `https://cdn.test/${path}` } }))
@@ -191,4 +196,33 @@ it('clears the chosen photo after posting', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
   expect(screen.queryByAltText('Selected photo preview')).not.toBeInTheDocument()
+})
+
+it('shows a listing posted by someone else without a page refresh', async () => {
+  await start()
+  client.from.mockReturnValue(query({ data: [...rows, { id: 3, name: 'Fresh lamp', price: 8, category: 'Electronics', condition: 'New', profiles: null }], error: null }))
+  expect(screen.queryByText('Fresh lamp')).not.toBeInTheDocument()
+  act(() => { changeHandlers.INSERT({ new: { id: 3 } }) })
+  expect(await screen.findByText('Fresh lamp')).toBeInTheDocument()
+})
+it('removes a listing deleted by someone else and closes its open details', async () => {
+  await start()
+  fireEvent.keyDown(screen.getByText('Calculus book').closest('article')!, { key: 'Enter' })
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Calculus book')
+  act(() => { changeHandlers.DELETE({ old: { id: 1 } }) })
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+})
+it('keeps open details when a different listing is deleted', async () => {
+  await start()
+  fireEvent.keyDown(screen.getByText('Calculus book').closest('article')!, { key: 'Enter' })
+  act(() => { changeHandlers.DELETE({ old: { id: 2 } }) })
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Calculus book')
+})
+it('stops listening for listing changes when unmounted', async () => {
+  const { unmount } = render(<App />)
+  await screen.findByText('Calculus book')
+  unmount()
+  expect(client.removeChannel).toHaveBeenCalledWith(changeChannel)
 })
