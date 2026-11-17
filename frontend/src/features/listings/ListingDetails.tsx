@@ -1,9 +1,12 @@
 import type { Listing } from './listing'
+import DeleteListingButton from './DeleteListingButton'
 
 type ListingDetailsProps = {
   listing: Listing
   saved: boolean
   canMessage: boolean
+  currentUserId: string | null
+  onDeleted: (id: number, notice: string) => void
   onClose: () => void
   onToggleFavorite: (id: number) => void
   onMessage: (sellerId: string) => void
@@ -13,6 +16,8 @@ export default function ListingDetails({
   listing,
   saved,
   canMessage,
+  currentUserId,
+  onDeleted,
   onClose,
   onToggleFavorite,
   onMessage,
@@ -59,6 +64,14 @@ export default function ListingDetails({
             a question or arrange a convenient meeting time.
           </p>
           <div className="listing-modal-actions">
+            {currentUserId === listing.sellerId && (
+              <DeleteListingButton
+                key={`${listing.id}:${currentUserId}`}
+                listingId={listing.id}
+                userId={currentUserId}
+                onDeleted={onDeleted}
+              />
+            )}
             <button
               className="favorite-detail-button"
               type="button"

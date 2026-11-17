@@ -101,6 +101,12 @@ All decisions go through an atomic database function which locks the listing,
 rejects stale decisions, changes its status, and records an immutable audit
 event. Admins can query history in `public.listing_moderation_events`.
 
+Owners can permanently delete their own listings after applying the
+[listing deletion and visibility repairs](SQL_LISTING_FIXES.md). Other users,
+including admins, cannot hard-delete someone else's listing. Existing moderation
+history survives owner deletion. The repair also restores approved public reads
+when legacy owner-only policies are present, without publishing pending items.
+
 ## Enable this in your Supabase project
 
 The hosted database has not been changed automatically.

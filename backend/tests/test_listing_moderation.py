@@ -34,7 +34,7 @@ def database():
         try:
             with psycopg.connect(host='127.0.0.1', port=port, user='postgres', dbname='postgres', autocommit=True) as connection:
                 connection.execute((ROOT / 'supabase/tests/listings_fixture.sql').read_text())
-                for name in ['202611060001_listing_moderation.sql', '202611130001_account_groups.sql', '202611130002_protect_admin_groups.sql']:
+                for name in ['202611060001_listing_moderation.sql', '202611130001_account_groups.sql', '202611130002_protect_admin_groups.sql', '202611170001_owner_listing_delete.sql', '202611170002_listing_visibility.sql']:
                     migration = ROOT / 'supabase/migrations' / name
                     if migration.exists():
                         connection.execute(migration.read_text())
@@ -101,7 +101,6 @@ def test_users_cannot_moderate_even_with_spoofed_claims(sql, identity):
 
 @pytest.mark.parametrize('statement', [
     "update public.listings set moderation_status='approved'",
-    'delete from public.listings',
     "insert into public.listings (seller_id,name,price,category,condition,moderation_status) values ('" + SELLER + "','Bypass',1,'Textbooks','New','approved')",
     "insert into public.listing_moderation_events (listing_id,actor_id,action,reason) values (1,'" + ADMIN + "','approve','Forged')",
 ])
@@ -110,6 +109,65 @@ def test_direct_writes_cannot_bypass_review(sql, statement):
     create_listing(sql)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         sql.execute(statement)
+
+
+@pytest.mark.parametrize('status', ['pending', 'approved', 'rejected', 'removed'])
+def test_seller_deletes_own_listing_without_losing_moderation_history(sql, status):
+    login(sql)
+    listing = create_listing(sql)
+    if status != 'pending':
+        login(sql, ADMIN)
+        moderate(sql, listing, 'reject' if status == 'rejected' else 'approve')
+        if status == 'removed':
+            moderate(sql, listing, 'remove', expected='approved')
+    sql.execute('reset role')
+    history = sql.execute('select * from public.listing_moderation_events order by id').fetchall()
+    login(sql)
+    assert sql.execute('delete from public.listings where id=%s returning id', [listing]).fetchall() == [(listing,)]
+    assert sql.execute('select id from public.listings where id=%s', [listing]).fetchall() == []
+    sql.execute('reset role')
+    assert sql.execute('select * from public.listing_moderation_events order by id').fetchall() == history
+
+
+@pytest.mark.parametrize('identity', [OTHER, ADMIN])
+def test_non_owner_cannot_delete_even_with_forged_admin_metadata(sql, identity):
+    login(sql)
+    listing = create_listing(sql)
+    login(sql, ADMIN)
+    moderate(sql, listing)
+    login(sql, identity, app_metadata={'group': 'admin'}, user_metadata={'group': 'admin'})
+    assert sql.execute('delete from public.listings where id=%s returning id', [listing]).fetchall() == []
+    sql.execute('reset role')
+    assert sql.execute('select id from public.listings where id=%s', [listing]).fetchone() == (listing,)
+
+
+def test_anonymous_cannot_delete_and_missing_delete_returns_no_rows(sql):
+    login(sql)
+    assert sql.execute('delete from public.listings where id=999999 returning id').fetchall() == []
+    login(sql, None)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        sql.execute('delete from public.listings')
+
+
+@pytest.mark.parametrize('command', ['select', 'all'])
+def test_visibility_upgrade_replaces_legacy_owner_only_restrictions(sql, command):
+    login(sql)
+    approved = create_listing(sql)
+    hidden = create_listing(sql)
+    login(sql, ADMIN)
+    moderate(sql, approved)
+    sql.execute('reset role')
+    sql.execute(f'create policy legacy_owner_only on public.listings as restrictive for {command} to authenticated using (seller_id = auth.uid())')
+    migration = ROOT / 'supabase/migrations/202611170002_listing_visibility.sql'
+    if migration.exists():
+        # Keep upgrade checks inside this test's rollback transaction.
+        sql.execute(migration.read_text().removeprefix('begin;\n').removesuffix('commit;\n'))
+    login(sql, OTHER)
+    assert sql.execute('select id from public.listings order by id').fetchall() == [(approved,)]
+    login(sql, None)
+    assert sql.execute('select id from public.listings order by id').fetchall() == [(approved,)]
+    login(sql)
+    assert sql.execute('select id from public.listings where id=%s', [hidden]).fetchone() == (hidden,)
 
 
 @pytest.mark.parametrize('action,expected', [('reject', 'rejected'), ('remove', 'removed')])

@@ -32,17 +32,19 @@ export function useListings() {
 
         const rows = (result.data ?? []) as ListingRow[]
         const sellerIds = [...new Set(rows.map((row) => row.seller_id))]
-        const members = await supabase
-          .from('messaging_members')
-          .select('id, full_name')
-          .in('id', sellerIds)
-        if (cancelled) return
-        if (members.error) {
-          setError(members.error.message)
-          return
+        // Seller names are optional; directory access must not hide public listings.
+        let names = new Map<string, string>()
+        try {
+          const members = await supabase
+            .from('messaging_members')
+            .select('id, full_name')
+            .in('id', sellerIds)
+          if (!members.error)
+            names = new Map((members.data ?? []).map((member) => [member.id, member.full_name]))
+        } catch {
+          // toListing supplies the public fallback when the directory is unavailable.
         }
-
-        const names = new Map((members.data ?? []).map((member) => [member.id, member.full_name]))
+        if (cancelled) return
         setListings(rows.map((row) => toListing({ ...row, sellerName: names.get(row.seller_id) })))
       } catch {
         if (!cancelled) setError('Unable to load listings. Please try again.')

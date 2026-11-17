@@ -96,6 +96,27 @@ it('shows each listing username instead of the generic student label', async () 
     within(screen.getByRole('dialog')).getByText(/Listed by Calculus Seller/),
   ).toBeInTheDocument()
 })
+
+it('removes a deleted owner listing from the marketplace and saved listings', async () => {
+  client.from.mockImplementation((table: string) =>
+    query({
+      data: table === 'messaging_members' ? members : [{ ...rows[0], seller_id: 'self' }, rows[1]],
+      error: null,
+    }),
+  )
+  await start()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Save listing' })[0])
+  fireEvent.click(screen.getByText('Calculus book'))
+  const deletion = query({ data: [{ id: 1, image_path: null }], error: null })
+  client.from.mockReturnValue({ delete: vi.fn().mockReturnValue(deletion) })
+  fireEvent.click(screen.getByRole('button', { name: 'Delete listing' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Listing deleted.')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Remove from favorites' })).not.toBeInTheDocument()
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+})
 afterEach(() => vi.unstubAllGlobals())
 async function start() {
   render(<App />)
@@ -145,6 +166,21 @@ it('shows listing service errors', async () => {
   render(<App />)
   expect(await screen.findByText('Listing service offline')).toBeInTheDocument()
 })
+
+it.each(['denied', 'rejected'])(
+  'shows other sellers listings when seller names are %s',
+  async (failure) => {
+    const directory = query({ data: null, error: { message: 'Directory access denied' } })
+    if (failure === 'rejected') directory.in.mockRejectedValueOnce(new Error('Directory offline'))
+    client.from.mockImplementation((table: string) =>
+      table === 'listings' ? query({ data: rows, error: null }) : directory,
+    )
+    await start()
+    expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+    expect(screen.getAllByText('Listed by RPI student')).toHaveLength(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  },
+)
 it.each(['-1', 'abc', '', '   ', 'Infinity'])('rejects invalid price %s', async (price) => {
   await sell(price)
   fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))

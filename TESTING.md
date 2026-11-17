@@ -77,6 +77,20 @@ GitHub Actions runs frontend coverage, lint, build, and backend coverage on push
 
 ## Remaining integration work
 
+### Owner deletion and public listing visibility
+
+See [SQL listing repairs](docs/SQL_LISTING_FIXES.md) for deployment order and the
+failing-test-first evidence for issues #35/#36. New PostgreSQL checks cover owner
+deletion in every moderation state, non-owner/admin/anonymous denial, preserved
+audit events, and upgrades from restrictive owner-only SELECT/ALL policies.
+Frontend regressions cover optional seller-directory failures and confirmed
+owner deletion, retries, loading, request cleanup, photo cleanup failures, and
+removal from marketplace/favorites. The two new migrations must be applied to
+the hosted project; passing isolated tests does not establish hosted deployment.
+Remaining deletion guard branches include duplicate handler invocation before
+rerender and cancellation during photo cleanup. These are included in coverage,
+not excluded to satisfy thresholds.
+
 The admin Users screen is covered by UI tests and actual PostgreSQL integration checks in
 `test_account_groups.py`: current-admin directory access, default groups, literal search,
 pagination, promotion, forbidden self/other-admin demotion, metadata preservation, eligibility,

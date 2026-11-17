@@ -218,6 +218,13 @@ function App() {
           listing={selectedListing}
           saved={favorites.includes(selectedListing.id)}
           canMessage={!!session}
+          currentUserId={session?.user.id ?? null}
+          onDeleted={(id, notice) => {
+            setListings((current) => current.filter((listing) => listing.id !== id))
+            setFavorites((current) => current.filter((favorite) => favorite !== id))
+            setSelectedListing(null)
+            setListingNotice(notice)
+          }}
           onClose={closeListingDetails}
           onToggleFavorite={toggleFavorite}
           onMessage={(sellerId) => {
