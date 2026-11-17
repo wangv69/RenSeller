@@ -6,6 +6,8 @@ import './App.css'
 import Auth from './Auth'
 import Profile, { SellerProfile, type Purchase } from './Profile'
 import { useListingChanges } from './useListingChanges'
+import SmartSearchButton from './SmartSearchButton'
+import type { SmartFilters } from './lib/smartSearch'
 
 type Listing = {
   id: number
@@ -60,6 +62,7 @@ function App() {
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [conditionFilter, setConditionFilter] = useState('All conditions')
+  const [maxPrice, setMaxPrice] = useState<number | null>(null)
   const [favorites, setFavorites] = useState<number[]>([])
   const [showSellForm, setShowSellForm] = useState(false)
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
@@ -187,6 +190,13 @@ function App() {
     window.location.hash = 'top'
   }
 
+  function applySmartFilters(filters: SmartFilters) {
+    setSearch(filters.keywords)
+    setActiveCategories(filters.categories)
+    setConditionFilter(filters.condition ?? 'All conditions')
+    setMaxPrice(filters.max_price)
+  }
+
   function openSellerProfile(sellerId: string) {
     setSelectedSellerId(sellerId)
     setCurrentPage('seller-profile')
@@ -195,8 +205,9 @@ function App() {
   const visibleListings = listings.filter((listing) => {
     const matchesCategory = activeCategories.length === 0 || listing.category.some((category) => activeCategories.includes(category))
     const matchesCondition = conditionFilter === 'All conditions' || listing.condition === conditionFilter
+    const matchesPrice = maxPrice === null || Number(listing.price.replace('$', '')) <= maxPrice
     const searchText = `${listing.title} ${listing.category.join(' ')}`.toLowerCase()
-    return matchesCategory && matchesCondition && searchText.includes(search.toLowerCase())
+    return matchesCategory && matchesCondition && matchesPrice && searchText.includes(search.toLowerCase())
   })
 
   async function toggleFavorite(id: number) {
@@ -398,6 +409,7 @@ function App() {
         <div className="search-row page-width">
           <label className="search-box"><span className="search-icon" aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for anything" aria-label="Search listings" />{search && <button type="button" className="clear-search" onClick={() => setSearch('')} aria-label="Clear search">×</button>}</label>
           <button className="search-button" type="button" aria-label="Submit search">Search</button>
+          <SmartSearchButton query={search} accessToken={session?.access_token ?? null} onResult={applySmartFilters} />
         </div>
       </header>
 
@@ -473,6 +485,12 @@ function App() {
                 </div>
                 <button className="filter-button" type="button" onClick={() => setFilterOpen((open) => !open)} aria-expanded={filterOpen}>Filter <span></span></button>
               </div>
+              {maxPrice !== null && (
+                <p className="active-filter">
+                  <span>Under ${maxPrice}</span>
+                  <button className="text-button" type="button" onClick={() => setMaxPrice(null)}>Clear price limit</button>
+                </p>
+              )}
               {filterOpen && (
                 <label className="filter-control">Condition
                   <select value={conditionFilter} onChange={(event) => setConditionFilter(event.target.value)}>
@@ -559,7 +577,10 @@ function App() {
                   <button className="cancel-button delete-button" type="button" onClick={() => setConfirmingDelete(true)}>Delete listing</button>
                 )
               ) : (
-                <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+                <>
+                  <button className="sell-button" type="button">Buy item</button>
+                  <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+                </>
               )}</div>{deleteError && <p role="alert">{deleteError}</p>}</div></div></div>}
 
       {showSellForm && (

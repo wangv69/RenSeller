@@ -17,7 +17,7 @@ const changeChannel = { on: vi.fn(), subscribe: vi.fn() }
 vi.mock('./lib/supabase', () => ({ supabase: client }))
 vi.mock('./Auth', () => ({
   default: function TestAuth({ onProfileOpen, onSessionChange }: { onProfileOpen: () => void; onSessionChange: (session: unknown) => void }) {
-    useEffect(() => onSessionChange({ user: { id: 'user-1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student' } } }), [onSessionChange])
+    useEffect(() => onSessionChange({ access_token: 'test-token', user: { id: 'user-1', email: 'test@rpi.edu', user_metadata: { full_name: 'Test Student' } } }), [onSessionChange])
     return <button type="button" onClick={onProfileOpen}>Account</button>
   },
 }))
@@ -266,4 +266,76 @@ it('stops listening for listing changes when unmounted', async () => {
   await screen.findByText('Calculus book')
   unmount()
   expect(client.removeChannel).toHaveBeenCalledWith(changeChannel)
+})
+
+const smartFilters = (overrides = {}) => ({ keywords: 'lamp', categories: ['Furniture'], condition: 'Fair', max_price: 10, ...overrides })
+function stubSmartSearch(body: unknown, status = 200) {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }))
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+async function smartSearch(text = 'cheap lamp for my dorm') {
+  fireEvent.change(screen.getByLabelText('Search listings'), { target: { value: text } })
+  fireEvent.click(screen.getByRole('button', { name: 'Smart search' }))
+}
+it('applies smart search filters to the listings', async () => {
+  const fetchMock = stubSmartSearch(smartFilters())
+  await start()
+  await smartSearch()
+  expect(await screen.findByText('Under $10')).toBeInTheDocument()
+  expect(fetchMock).toHaveBeenCalledWith('/api/search/interpret', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) }))
+  expect(screen.getByLabelText('Search listings')).toHaveValue('lamp')
+  expect(screen.getByRole('button', { name: 'Furniture' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+})
+it('hides listings above the smart price limit and keeps ones at it', async () => {
+  stubSmartSearch(smartFilters({ keywords: '', categories: [], condition: null, max_price: 5 }))
+  await start()
+  await smartSearch()
+  await screen.findByText('Under $5')
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+  expect(screen.queryByText('Calculus book')).not.toBeInTheDocument()
+})
+it('shows the empty state when nothing is under the price limit', async () => {
+  stubSmartSearch(smartFilters({ keywords: '', categories: [], condition: null, max_price: 1 }))
+  await start()
+  await smartSearch()
+  expect(await screen.findByText('No listings found')).toBeInTheDocument()
+})
+it('clears the smart price limit and resets earlier filters on a new smart search', async () => {
+  stubSmartSearch(smartFilters({ keywords: '', categories: [], condition: null, max_price: 1 }))
+  await start()
+  await smartSearch()
+  fireEvent.click(await screen.findByRole('button', { name: 'Clear price limit' }))
+  expect(screen.queryByText('Under $1')).not.toBeInTheDocument()
+  expect(screen.getByText('Calculus book')).toBeInTheDocument()
+  stubSmartSearch(smartFilters({ categories: ['Textbooks'], condition: null, max_price: null, keywords: '' }))
+  await smartSearch('textbooks')
+  await waitFor(() => expect(screen.queryByText('Desk lamp')).not.toBeInTheDocument())
+  expect(screen.queryByText(/^Under/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Furniture' })).toHaveAttribute('aria-pressed', 'false')
+})
+it('keeps the current filters when smart search fails', async () => {
+  stubSmartSearch({}, 503)
+  await start()
+  await smartSearch()
+  expect(await screen.findByRole('alert')).toHaveTextContent('unavailable')
+  expect(screen.getByLabelText('Search listings')).toHaveValue('cheap lamp for my dorm')
+  expect(screen.getByRole('button', { name: 'Furniture' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByText(/^Under/)).not.toBeInTheDocument()
+})
+it('shows a Buy item button on another student\'s listing details', async () => {
+  await start()
+  fireEvent.keyDown(screen.getByText('Desk lamp').closest('article')!, { key: 'Enter' })
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByRole('button', { name: /Buy item/ })).toBeEnabled()
+  expect(dialog.getByRole('button', { name: /Message seller/ })).toBeInTheDocument()
+})
+it('does not offer Buy item on your own listing', async () => {
+  await start()
+  fireEvent.keyDown(screen.getByText('Calculus book').closest('article')!, { key: 'Enter' })
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.queryByRole('button', { name: /Buy item/ })).not.toBeInTheDocument()
+  expect(dialog.getByRole('button', { name: 'Delete listing' })).toBeInTheDocument()
 })

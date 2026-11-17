@@ -12,4 +12,4 @@ export function query(result: unknown) {
   return chain
 }
 
-export const session = { user: { id: 'self', email: 'test@rpi.edu', user_metadata: { username: 'test' } } }
+export const session = { access_token: 'test-token', user: { id: 'self', email: 'test@rpi.edu', user_metadata: { username: 'test' } } }

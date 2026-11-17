@@ -23,6 +23,10 @@ services:
       PGDATABASE: ${POSTGRES_DB:-renseller}
       PGUSER: ${POSTGRES_USER:-renseller}
       PGPASSWORD: ${POSTGRES_PASSWORD:-renseller_local}
+      # Needed for sign-in checks and Smart search; set them in a root .env file.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
       interval: 10s
