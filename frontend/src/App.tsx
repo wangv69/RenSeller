@@ -4,7 +4,7 @@ import Messages from './Messages'
 import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
-import Profile, { SellerProfile, type Purchase } from './Profile'
+import Profile, { SellerProfile, type Purchase, type PendingTransaction } from './Profile'
 import { useListingChanges } from './useListingChanges'
 import SmartSearchButton from './SmartSearchButton'
 import type { SmartFilters } from './lib/smartSearch'
@@ -19,6 +19,7 @@ type Listing = {
   seller: string
   sellerId: string
   imagePath: string | null
+  status: 'active' | 'reserved' | 'sold'
 }
 
 const listingImageFallback = 'https://placehold.co/900x700?text=No+photo'
@@ -35,6 +36,7 @@ type ListingRow = {
   seller_id: string
   image_path: string | null
   profiles: { display_name: string | null } | { display_name: string | null }[] | null
+  status?: 'active' | 'reserved' | 'sold'
 }
 
 function toListing(row: ListingRow, currentUserId: string | null, currentUserName: string | null): Listing {
@@ -52,6 +54,7 @@ function toListing(row: ListingRow, currentUserId: string | null, currentUserNam
     seller: sellerName || (row.seller_id === currentUserId ? currentUserName : null) || 'RPI student',
     sellerId: row.seller_id,
     imagePath: row.image_path,
+    status: row.status ?? 'active',
   }
 }
 
@@ -74,6 +77,13 @@ function App() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserProfile, setCurrentUserProfile] = useState({ fullName: '', email: '', dorm: '' })
   const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [walletBalance, setWalletBalance] = useState(500)
+  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([])
+  const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false)
+  const [purchaseError, setPurchaseError] = useState<string | null>(null)
+  const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null)
+  const [ratingTransaction, setRatingTransaction] = useState<PendingTransaction | null>(null)
+  const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState<'home' | 'profile' | 'seller-profile'>(
@@ -128,11 +138,12 @@ function App() {
 
     const { data, error } = await supabase
       .from('listings')
-      .select('id, name, price, category, condition, seller_id, image_path, profiles(display_name)')
+      .select('id, name, price, category, condition, seller_id, image_path, status, profiles(display_name)')
       .order('id', { ascending: false })
 
     if (error) setError(error.message)
-    else setListings((data as unknown as ListingRow[]).map((row) => toListing(row, userId, userName)))
+    else setListings((data as unknown as ListingRow[])
+      .map((row) => toListing(row, userId, userName)))
     if (userId) {
       const { data: favoriteRows, error: favoritesError } = await supabase
         .from('listing_favorites')
@@ -153,6 +164,48 @@ function App() {
         price: `$${Number(purchase.amount).toFixed(2).replace(/\.00$/, '')}`,
         status: purchase.status,
       })))
+      const { data: wallet } = await supabase
+        .from('fake_wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (wallet) setWalletBalance(Number(wallet.balance))
+
+      const { data: transactionRows, error: transactionsError } = await supabase
+        .from('marketplace_transactions')
+        .select('id, listing_id, seller_id, amount, status')
+        .eq('buyer_id', userId)
+        .eq('status', 'pending_receipt')
+      if (!transactionsError) {
+        setPendingTransactions((transactionRows ?? []).map((transaction) => {
+          const listing = (data as unknown as ListingRow[] | null)?.find((row) => row.id === transaction.listing_id)
+          const sellerProfile = listing?.profiles
+            ? (Array.isArray(listing.profiles) ? listing.profiles[0] : listing.profiles)
+            : null
+          return {
+            id: String(transaction.id),
+            listingId: transaction.listing_id,
+            title: listing?.name ?? 'Marketplace item',
+            seller: sellerProfile?.display_name?.trim() || 'RPI student',
+            sellerId: transaction.seller_id,
+            amount: `$${Number(transaction.amount).toFixed(2).replace(/\.00$/, '')}`,
+          }
+        }))
+      }
+      const { data: ratingRows } = await supabase
+        .from('seller_ratings')
+        .select('seller_id, rating')
+      if (ratingRows) {
+        const totals = new Map<string, { total: number; count: number }>()
+        ratingRows.forEach((row) => {
+          const current = totals.get(row.seller_id) ?? { total: 0, count: 0 }
+          totals.set(row.seller_id, { total: current.total + row.rating, count: current.count + 1 })
+        })
+        setRatings(Object.fromEntries([...totals].map(([sellerId, value]) => [
+          sellerId,
+          { average: value.total / value.count, count: value.count },
+        ])))
+      }
     }
     setLoading(false)
   }, [])
@@ -203,6 +256,7 @@ function App() {
   }
 
   const visibleListings = listings.filter((listing) => {
+    if (listing.status !== 'active') return false
     const matchesCategory = activeCategories.length === 0 || listing.category.some((category) => activeCategories.includes(category))
     const matchesCondition = conditionFilter === 'All conditions' || listing.condition === conditionFilter
     const matchesPrice = maxPrice === null || Number(listing.price.replace('$', '')) <= maxPrice
@@ -225,6 +279,65 @@ function App() {
       setFavorites((current) => isSaved ? [...current, id] : current.filter((favoriteId) => favoriteId !== id))
       setError(result.error.message)
     }
+  }
+
+  async function confirmPurchase() {
+    if (!supabase || !selectedListing) return
+    setPurchaseError(null)
+    const listingPrice = Number(selectedListing.price.replace('$', ''))
+    if (listingPrice > walletBalance) {
+      setPurchaseError('Insufficient fake money.')
+      return
+    }
+    const { data, error } = await supabase.rpc('start_purchase', { p_listing_id: selectedListing.id })
+    if (error) {
+      setPurchaseError(error.message)
+      return
+    }
+    const result = data as { balance?: number } | null
+    if (typeof result?.balance === 'number') setWalletBalance(result.balance)
+    setListings((current) => current.filter((listing) => listing.id !== selectedListing.id))
+    setShowPurchaseConfirm(false)
+    setSelectedListing(null)
+    setPurchaseMessage('Purchase started. The seller has been sent an automated direct message.')
+  }
+
+  async function confirmReceived(transactionId: string) {
+    if (!supabase) return
+    const transaction = pendingTransactions.find((item) => item.id === transactionId)
+    const { error } = await supabase.rpc('confirm_receipt', { p_transaction_id: Number(transactionId) })
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setPendingTransactions((current) => current.filter((item) => item.id !== transactionId))
+    await loadListings()
+    if (transaction) setRatingTransaction(transaction)
+  }
+
+  async function cancelPurchase(transactionId: string) {
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('cancel_purchase', { p_transaction_id: Number(transactionId) })
+    if (error) {
+      setError(error.message)
+      return
+    }
+    const result = data as { refund?: number } | null
+    if (typeof result?.refund === 'number') setWalletBalance((current) => current + (result.refund ?? 0))
+    setPendingTransactions((current) => current.filter((item) => item.id !== transactionId))
+    setPurchaseMessage('Purchase canceled. Your fake money was refunded and the item was returned to the listings.')
+    await loadListings()
+  }
+
+  async function rateSeller(transactionId: string, sellerId: string, rating: number) {
+    if (!supabase) return
+    const { error } = await supabase.rpc('rate_seller', {
+      p_transaction_id: Number(transactionId),
+      p_seller_id: sellerId,
+      p_rating: rating,
+    })
+    if (error) setError(error.message)
+    else setRatingTransaction(null)
   }
 
   async function deleteListing(listing: { id: number; title: string; image: string; sellerId?: string }) {
@@ -422,11 +535,19 @@ function App() {
             onToggleSaved={toggleFavorite}
             onDeleteListing={deleteListing}
             purchases={purchases}
+            walletBalance={walletBalance}
+            pendingTransactions={pendingTransactions}
+            onConfirmReceived={confirmReceived}
+            onCancelPurchase={cancelPurchase}
+            onRateSeller={rateSeller}
+            rating={ratings[currentUserId ?? '']}
           />
         ) : currentPage === 'seller-profile' && selectedSellerId ? (
           <SellerProfile
             sellerName={listings.find((listing) => listing.sellerId === selectedSellerId)?.seller ?? 'RPI student'}
-            listings={listings.filter((listing) => listing.sellerId === selectedSellerId)}
+            listings={listings.filter((listing) => listing.sellerId === selectedSellerId && listing.status === 'active')}
+            soldListings={listings.filter((listing) => listing.sellerId === selectedSellerId && listing.status === 'sold')}
+            rating={ratings[selectedSellerId]}
             profile={selectedSellerId === currentUserId ? currentUserProfile : undefined}
             savedListings={selectedSellerId === currentUserId ? listings.filter((listing) => favorites.includes(listing.id)) : []}
             onBack={returnHome}
@@ -578,10 +699,60 @@ function App() {
                 )
               ) : (
                 <>
-                  <button className="sell-button" type="button">Buy item</button>
+                  <button className="sell-button" type="button" onClick={() => { setPurchaseError(null); setShowPurchaseConfirm(true) }}>Buy item</button>
                   <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
                 </>
               )}</div>{deleteError && <p role="alert">{deleteError}</p>}</div></div></div>}
+
+      {showPurchaseConfirm && selectedListing && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="purchase-title">
+            <p className="eyebrow">FAKE MONEY TRANSACTION</p>
+            <h2 id="purchase-title">Confirm purchase</h2>
+            <p>{selectedListing.title}</p>
+            <div className="transaction-summary">
+              <span>Price <strong>{selectedListing.price}</strong></span>
+              <span>Current balance <strong>${walletBalance.toFixed(2)}</strong></span>
+              <span>Balance after purchase <strong>${Math.max(0, walletBalance - Number(selectedListing.price.replace('$', ''))).toFixed(2)}</strong></span>
+            </div>
+            {purchaseError && <p role="alert">{purchaseError}</p>}
+            <div className="modal-actions">
+              <button className="cancel-button" type="button" onClick={() => setShowPurchaseConfirm(false)}>Cancel</button>
+              <button className="sell-button" type="button" onClick={confirmPurchase}>Confirm purchase</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purchaseMessage && (
+        <div className="transaction-notice" role="status">
+          <span>{purchaseMessage}</span>
+          <button type="button" aria-label="Dismiss purchase message" onClick={() => setPurchaseMessage(null)}>×</button>
+        </div>
+      )}
+
+      {ratingTransaction && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="rating-title">
+            <p className="eyebrow">TRANSACTION COMPLETE</p>
+            <h2 id="rating-title">Rate {ratingTransaction.seller}</h2>
+            <p>You confirmed receipt of {ratingTransaction.title}. How was the seller?</p>
+            <div className="rating-actions">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  type="button"
+                  aria-label={`Rate seller ${rating} stars`}
+                  onClick={() => rateSeller(ratingTransaction.id, ratingTransaction.sellerId, rating)}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <button className="cancel-button" type="button" onClick={() => setRatingTransaction(null)}>Skip rating</button>
+          </div>
+        </div>
+      )}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>

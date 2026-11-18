@@ -131,3 +131,41 @@ it('asks signed-out users to sign in', async () => {
   render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
   expect(await screen.findByRole('status')).toHaveTextContent('Please sign in')
 })
+
+it('shows wallet balance and confirms or cancels pending purchases', async () => {
+  const onConfirmReceived = vi.fn()
+  const onCancelPurchase = vi.fn()
+  const onRateSeller = vi.fn()
+  const pending = [{
+    id: 'tx-1',
+    listingId: 2,
+    title: 'Desk lamp',
+    seller: 'Jordan Student',
+    sellerId: 'seller-1',
+    amount: '$12',
+  }]
+  render(
+    <Profile
+      onBack={vi.fn()}
+      onToggleSaved={vi.fn()}
+      onDeleteListing={vi.fn()}
+      savedListings={[]}
+      postedListings={[]}
+      walletBalance={488}
+      pendingTransactions={pending}
+      onConfirmReceived={onConfirmReceived}
+      onCancelPurchase={onCancelPurchase}
+      onRateSeller={onRateSeller}
+    />,
+  )
+  await screen.findByRole('heading', { name: 'Profile' })
+  expect(screen.getByText('$488 fake money')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect(screen.getByText('Desk lamp')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm received' }))
+  expect(onConfirmReceived).toHaveBeenCalledWith('tx-1')
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel purchase' }))
+  expect(onCancelPurchase).toHaveBeenCalledWith('tx-1')
+  fireEvent.click(screen.getByRole('button', { name: 'Rate seller 5 stars' }))
+  expect(onRateSeller).toHaveBeenCalledWith('tx-1', 'seller-1', 5)
+})

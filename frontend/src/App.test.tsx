@@ -3,14 +3,18 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
-const { client, listingsQuery, favoritesQuery, bucket, favoriteDeleteChain } = vi.hoisted(() => {
+const { client, listingsQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain } = vi.hoisted(() => {
   const listingsQuery = { insert: vi.fn(), select: vi.fn(), order: vi.fn(), single: vi.fn(), delete: vi.fn(), eq: vi.fn(), then: vi.fn() }
-  const favoritesQuery = { select: vi.fn(), eq: vi.fn(), insert: vi.fn(), delete: vi.fn() }
+  const favoritesQuery = { select: vi.fn(), eq: vi.fn(), insert: vi.fn(), delete: vi.fn(), maybeSingle: vi.fn() }
   const bucket = { upload: vi.fn(), remove: vi.fn(), getPublicUrl: vi.fn() }
   const favoriteDeleteChain = { eq: vi.fn() }
+  const walletQuery = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() }
+  const purchaseQuery = { select: vi.fn(), eq: vi.fn() }
+  const transactionQuery = { select: vi.fn(), eq: vi.fn(), then: vi.fn() }
+  const ratingQuery = { select: vi.fn(), then: vi.fn() }
   favoriteDeleteChain.eq.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
-  const client = { auth: { getUser: vi.fn() }, from: vi.fn(), storage: { from: vi.fn() }, channel: vi.fn(), removeChannel: vi.fn() }
-  return { client, listingsQuery, favoritesQuery, bucket, favoriteDeleteChain }
+  const client = { auth: { getUser: vi.fn() }, from: vi.fn(), storage: { from: vi.fn() }, channel: vi.fn(), removeChannel: vi.fn(), rpc: vi.fn() }
+  return { client, listingsQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain }
 })
 const changeHandlers: Record<string, (payload: unknown) => void> = {}
 const changeChannel = { on: vi.fn(), subscribe: vi.fn() }
@@ -26,6 +30,7 @@ vi.mock('./Messages', () => ({ default: () => null }))
 beforeEach(() => {
   vi.resetAllMocks()
   client.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1', user_metadata: {} } }, error: null })
+  client.rpc.mockResolvedValue({ data: { transaction_id: 4, balance: 488, seller_id: 'user-2' }, error: null })
   listingsQuery.select.mockReturnValue(listingsQuery)
   listingsQuery.order.mockResolvedValue({
     data: [
@@ -38,7 +43,18 @@ beforeEach(() => {
   favoritesQuery.eq.mockImplementation((field: string) => Promise.resolve(field === 'listing_id'
     ? { data: [], error: null }
     : { data: [{ id: 9, title: 'Calculus book', seller_name: 'Alex Student', amount: 35, purchased_at: '2026-11-01T12:00:00Z', status: 'Completed' }], error: null }))
+  favoritesQuery.maybeSingle.mockResolvedValue({ data: { balance: 500 }, error: null })
   favoritesQuery.insert.mockResolvedValue({ error: null })
+  walletQuery.select.mockReturnValue(walletQuery)
+  walletQuery.eq.mockReturnValue(walletQuery)
+  walletQuery.maybeSingle.mockResolvedValue({ data: { balance: 500 }, error: null })
+  purchaseQuery.select.mockReturnValue(purchaseQuery)
+  purchaseQuery.eq.mockResolvedValue({ data: [], error: null })
+  transactionQuery.select.mockReturnValue(transactionQuery)
+  transactionQuery.eq.mockReturnValue(transactionQuery)
+  transactionQuery.then.mockImplementation((resolve) => Promise.resolve({ data: [], error: null }).then(resolve))
+  ratingQuery.select.mockReturnValue(ratingQuery)
+  ratingQuery.then.mockImplementation((resolve) => Promise.resolve({ data: [], error: null }).then(resolve))
   favoriteDeleteChain.eq.mockReset()
   favoriteDeleteChain.eq.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
   favoritesQuery.delete.mockReturnValue(favoriteDeleteChain)
@@ -47,7 +63,14 @@ beforeEach(() => {
   listingsQuery.then.mockImplementation((resolve) => Promise.resolve({ data: [{ id: 1 }], error: null }).then(resolve))
   listingsQuery.insert.mockReturnValue(listingsQuery)
   listingsQuery.single.mockResolvedValue({ data: { id: 3, name: 'New book', price: 15, category: ['Textbooks'], condition: 'Good condition', seller_id: 'user-1', image_path: null }, error: null })
-  client.from.mockImplementation((table: string) => table === 'listings' ? listingsQuery : favoritesQuery)
+  client.from.mockImplementation((table: string) => {
+    if (table === 'listings') return listingsQuery
+    if (table === 'fake_wallets') return walletQuery
+    if (table === 'purchases') return purchaseQuery
+    if (table === 'marketplace_transactions') return transactionQuery
+    if (table === 'seller_ratings') return ratingQuery
+    return favoritesQuery
+  })
   client.storage.from.mockReturnValue(bucket)
   changeChannel.on.mockImplementation((_type: string, filter: { event: string }, callback: (payload: unknown) => void) => { changeHandlers[filter.event] = callback; return changeChannel })
   changeChannel.subscribe.mockReturnValue(changeChannel)
@@ -235,6 +258,16 @@ it('confirms deletion from the listing modal', async () => {
   expect(screen.getByRole('dialog')).toBeInTheDocument()
 })
 
+it('opens transaction confirmation and confirms buying an item', async () => {
+  await start()
+  fireEvent.click(screen.getByText('Desk lamp'))
+  fireEvent.click(screen.getByRole('button', { name: 'Buy item' }))
+  expect(await screen.findByRole('heading', { name: 'Confirm purchase' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm purchase' }))
+  await waitFor(() => expect(client.rpc).toHaveBeenCalledWith('start_purchase', { p_listing_id: 2 }))
+  expect(await screen.findByText(/Purchase started/)).toBeInTheDocument()
+})
+
 async function start() { render(<App />); await screen.findByText('Calculus book') }
 it('shows a listing posted by someone else without a page refresh', async () => {
   await start()
@@ -338,4 +371,37 @@ it('does not offer Buy item on your own listing', async () => {
   const dialog = within(screen.getByRole('dialog'))
   expect(dialog.queryByRole('button', { name: /Buy item/ })).not.toBeInTheDocument()
   expect(dialog.getByRole('button', { name: 'Delete listing' })).toBeInTheDocument()
+})
+
+it('confirms receipt and opens the rating interface', async () => {
+  transactionQuery.then.mockImplementation((resolve) => Promise.resolve({
+    data: [{ id: 7, listing_id: 2, seller_id: 'user-2', amount: 12, status: 'pending_receipt' }],
+    error: null,
+  }).then(resolve))
+  client.rpc.mockResolvedValue({ data: { status: 'completed', seller_id: 'user-2' }, error: null })
+  await start()
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm received' }))
+  expect(await screen.findByRole('heading', { name: /Rate Other student/ })).toBeInTheDocument()
+  const ratingButtons = screen.getAllByRole('button', { name: 'Rate seller 5 stars' })
+  fireEvent.click(ratingButtons[ratingButtons.length - 1])
+  expect(client.rpc).toHaveBeenCalledWith('confirm_receipt', { p_transaction_id: 7 })
+  expect(client.rpc).toHaveBeenCalledWith('rate_seller', { p_transaction_id: 7, p_seller_id: 'user-2', p_rating: 5 })
+})
+
+it('cancels a pending purchase and refunds the wallet', async () => {
+  transactionQuery.then.mockImplementation((resolve) => Promise.resolve({
+    data: [{ id: 8, listing_id: 2, seller_id: 'user-2', amount: 12, status: 'pending_receipt' }],
+    error: null,
+  }).then(resolve))
+  client.rpc.mockResolvedValue({ data: { status: 'cancelled', refund: 12 }, error: null })
+  await start()
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel purchase' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Purchase canceled')
+  expect(client.rpc).toHaveBeenCalledWith('cancel_purchase', { p_transaction_id: 8 })
 })
