@@ -159,7 +159,7 @@ it('shows wallet balance and confirms or cancels pending purchases', async () =>
     />,
   )
   await screen.findByRole('heading', { name: 'Profile' })
-  expect(screen.getByText('$488 fake money')).toBeInTheDocument()
+  expect(screen.getByText('$488')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
   expect(screen.getByText('Desk lamp')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Confirm received' }))

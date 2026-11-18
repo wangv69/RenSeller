@@ -257,7 +257,7 @@ export default function Profile({
           {activeSection === 'information' ? <>
             <div className="profile-panel profile-identity-panel">
               <div className="profile-picture-wrap"><div className="profile-picture">{profileImage ? <img src={profileImage} alt="Profile" /> : initial}</div><label className="upload-picture">Change picture<input type="file" accept="image/*" onChange={uploadProfileImage} /></label></div>
-              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p><p className="profile-username">★ {rating ? `${rating.average.toFixed(1)} · ${rating.count} ratings` : 'No ratings yet'}</p><p className="profile-wallet">${walletBalance.toFixed(2).replace(/\.00$/, '')} fake money</p></div>
+              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p><p className="profile-username">★ {rating ? `${rating.average.toFixed(1)} · ${rating.count} ratings` : 'No ratings yet'}</p><p className="profile-wallet">${walletBalance.toFixed(2).replace(/\.00$/, '')}</p></div>
             </div>
 
             <form className="profile-panel profile-form" onSubmit={saveInformation}>

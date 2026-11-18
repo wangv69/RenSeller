@@ -103,7 +103,8 @@ it('restores saved listings after loading', async () => {
 it('shows the fake wallet balance on the home page', async () => {
   walletQuery.maybeSingle.mockResolvedValue({ data: { balance: 488 }, error: null })
   render(<App />)
-  expect(await screen.findByText('$488 fake money')).toBeInTheDocument()
+  expect(await screen.findByText('$488')).toBeInTheDocument()
+  expect(screen.queryByText(/fake money/i)).not.toBeInTheDocument()
 })
 
 it('searches listings and clears the search', async () => {
