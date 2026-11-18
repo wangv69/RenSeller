@@ -52,8 +52,8 @@ alter table public.seller_ratings enable row level security;
 
 grant select on public.fake_wallets to authenticated;
 grant select on public.marketplace_transactions to authenticated;
+revoke all on public.seller_ratings from anon, authenticated;
 grant select on public.seller_ratings to authenticated, anon;
-grant insert on public.seller_ratings to authenticated;
 
 drop policy if exists "Users read their fake wallet" on public.fake_wallets;
 create policy "Users read their fake wallet"
@@ -66,9 +66,6 @@ on public.marketplace_transactions for select to authenticated
 using (buyer_id = auth.uid() or seller_id = auth.uid());
 
 drop policy if exists "Buyers rate completed sellers" on public.seller_ratings;
-create policy "Buyers rate completed sellers"
-on public.seller_ratings for insert to authenticated
-with check (buyer_id = auth.uid());
 
 drop policy if exists "Ratings are public" on public.seller_ratings;
 create policy "Ratings are public"

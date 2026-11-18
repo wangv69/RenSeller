@@ -17,6 +17,7 @@
 .wordmark span { color: var(--rpi-red); }
 .campus-note { color: var(--rpi-gray); font-family: 'Roboto Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1.2px; margin: 0; }
 .account-nav { align-items: center; display: flex; gap: 23px; margin-left: auto; }
+.wallet-home-balance { color: var(--rpi-red); font-family: 'Roboto Condensed', sans-serif; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .text-button, .view-all { background: none; border: 0; color: var(--ink); font-family: 'Roboto Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .5px; padding: 7px 0; text-transform: uppercase; }
 .text-button:hover, .view-all:hover { color: var(--rpi-red); }
 .sell-button { background: var(--rpi-red); border: 0; border-radius: 0; color: white; font-family: 'Roboto Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .5px; padding: 12px 17px; text-transform: uppercase; }

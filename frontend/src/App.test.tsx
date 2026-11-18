@@ -100,6 +100,12 @@ it('restores saved listings after loading', async () => {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument())
 })
 
+it('shows the fake wallet balance on the home page', async () => {
+  walletQuery.maybeSingle.mockResolvedValue({ data: { balance: 488 }, error: null })
+  render(<App />)
+  expect(await screen.findByText('$488 fake money')).toBeInTheDocument()
+})
+
 it('searches listings and clears the search', async () => {
   render(<App />)
   await screen.findByText('Calculus book')

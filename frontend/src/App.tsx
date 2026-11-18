@@ -217,6 +217,7 @@ function App() {
 
   useListingChanges({
     onInserted: () => { void loadListings() },
+    onUpdated: () => { void loadListings() },
     onDeleted: (id) => {
       setListings((current) => current.filter((listing) => listing.id !== id))
       setSelectedListing((current) => (current?.id === id ? null : current))
@@ -506,6 +507,7 @@ function App() {
           <a className="wordmark" href="#top" aria-label="RenSeller home"><span>REN</span>SELLER</a>
           <p className="campus-note">THE RPI STUDENT MARKETPLACE</p>
           <nav className="account-nav" aria-label="Account navigation">
+            {session && <span className="wallet-home-balance">${walletBalance.toFixed(2).replace(/\.00$/, '')} fake money</span>}
             {session && (
               <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>
                 Messages

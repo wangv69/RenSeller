@@ -32,6 +32,13 @@ it('reports an inserted listing', () => {
   act(() => handlers.INSERT({ new: { id: 9 } }))
   expect(onInserted).toHaveBeenCalledTimes(1)
 })
+it('subscribes to listing updates and reports the latest state', () => {
+  const onUpdated = vi.fn()
+  renderHook(() => useListingChanges({ onInserted: vi.fn(), onDeleted: vi.fn(), onUpdated }))
+  expect(channel.on).toHaveBeenCalledWith('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'listings' }, expect.any(Function))
+  act(() => handlers.UPDATE({ new: { id: 9, status: 'reserved' } }))
+  expect(onUpdated).toHaveBeenCalledTimes(1)
+})
 it('reports the id of a deleted listing', () => {
   const onDeleted = vi.fn()
   renderHook(() => useListingChanges({ onInserted: vi.fn(), onDeleted }))
