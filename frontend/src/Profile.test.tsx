@@ -30,6 +30,17 @@ it('shows posted listings and excludes saved listings from history', async () =>
   expect(onDeleteListing).toHaveBeenCalledWith(expect.objectContaining({ title: 'My textbook', id: 2 }))
 })
 
+it('does not offer delete for reserved or sold listings', async () => {
+  const reserved = { ...listing, id: 2, title: 'Reserved book', status: 'reserved' as const }
+  const sold = { ...listing, id: 3, title: 'Sold lamp', status: 'sold' as const }
+  render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[reserved, sold]} />)
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect(screen.getByText('Reserved')).toBeInTheDocument()
+  expect(screen.getByText('Sold')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+})
+
 it('loads details and saves profile information', async () => {
   render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} />)
   expect(await screen.findByLabelText('Full name')).toHaveValue('Test Student')

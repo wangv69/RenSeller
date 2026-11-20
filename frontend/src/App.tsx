@@ -341,9 +341,13 @@ function App() {
     else setRatingTransaction(null)
   }
 
-  async function deleteListing(listing: { id: number; title: string; image: string; sellerId?: string }) {
+  async function deleteListing(listing: { id: number; title: string; image: string; sellerId?: string; status?: 'active' | 'reserved' | 'sold' }) {
     if (!supabase || !currentUserId || listing.sellerId !== currentUserId) {
       setError('You can only delete your own listings.')
+      return
+    }
+    if (listing.status && listing.status !== 'active') {
+      setError('Reserved or sold listings cannot be deleted.')
       return
     }
     if (!window.confirm(`Delete "${listing.title}"?`)) return
@@ -472,6 +476,10 @@ function App() {
 
   async function handleDeleteListing(listing: Listing) {
     if (!supabase || !session) return
+    if (listing.status !== 'active') {
+      setDeleteError('Reserved or sold listings cannot be deleted.')
+      return
+    }
     setDeleting(true)
     setDeleteError(null)
 

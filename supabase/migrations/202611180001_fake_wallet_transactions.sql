@@ -46,6 +46,39 @@ create table if not exists public.seller_ratings (
   created_at timestamptz not null default now()
 );
 
+do $$
+declare
+  constraint_name text;
+begin
+  for constraint_name in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.marketplace_transactions'::regclass
+      and contype = 'f'
+      and confrelid = 'public.listings'::regclass
+  loop
+    execute format(
+      'alter table public.marketplace_transactions drop constraint %I',
+      constraint_name
+    );
+  end loop;
+
+  alter table public.marketplace_transactions
+    add constraint marketplace_transactions_listing_id_fkey
+    foreign key (listing_id)
+    references public.listings(id)
+    on delete restrict;
+end;
+$$;
+
+drop policy if exists "Sellers delete their own listings" on public.listings;
+create policy "Sellers delete their own listings"
+on public.listings for delete to authenticated
+using (
+  seller_id = auth.uid()
+  and status = 'active'
+);
+
 alter table public.fake_wallets enable row level security;
 alter table public.marketplace_transactions enable row level security;
 alter table public.seller_ratings enable row level security;

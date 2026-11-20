@@ -380,6 +380,29 @@ it('does not offer Buy item on your own listing', async () => {
   expect(dialog.getByRole('button', { name: 'Delete listing' })).toBeInTheDocument()
 })
 
+it('does not allow deleting an owned reserved listing', async () => {
+  const reservedListing = {
+    id: 1,
+    name: 'Calculus book',
+    price: 12,
+    category: ['Textbooks'],
+    condition: 'New',
+    seller_id: 'user-1',
+    image_path: null,
+    status: 'reserved',
+    profiles: null,
+  }
+  listingsQuery.order.mockResolvedValue({ data: [reservedListing], error: null })
+  vi.stubGlobal('confirm', vi.fn())
+  render(<App />)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  fireEvent.click(screen.getByRole('button', { name: 'Purchase & listing history' }))
+  expect(screen.getByText('Reserved')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+})
+
 it('confirms receipt and opens the rating interface', async () => {
   transactionQuery.then.mockImplementation((resolve) => Promise.resolve({
     data: [{ id: 7, listing_id: 2, seller_id: 'user-2', amount: 12, status: 'pending_receipt' }],
