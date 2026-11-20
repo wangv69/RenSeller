@@ -4,7 +4,10 @@ import Messages from './Messages'
 import { supabase } from './lib/supabase'
 import './App.css'
 import Auth from './Auth'
-import Profile from './Profile'
+import Profile, { SellerProfile, type Purchase, type PendingTransaction } from './Profile'
+import { useListingChanges } from './useListingChanges'
+import SmartSearchButton from './SmartSearchButton'
+import type { SmartFilters } from './lib/smartSearch'
 
 type Listing = {
   id: number
@@ -14,9 +17,12 @@ type Listing = {
   image: string
   condition: string
   seller: string
-  sellerId: string | null
+  sellerId: string
   imagePath: string | null
+  status: 'active' | 'reserved' | 'sold'
 }
+
+const listingImageFallback = 'https://placehold.co/900x700?text=No+photo'
 
 const categories = ['All listings', 'Textbooks', 'Electronics', 'Furniture', 'Clothing', 'Tickets']
 const listingCategories = categories.filter((c) => c !== 'All listings')
@@ -27,40 +33,28 @@ type ListingRow = {
   price: number
   category: string[] | string | null
   condition: string
+  seller_id: string
   image_path: string | null
-  seller_id: string | null
-  profiles: { display_name: string } | null
+  profiles: { display_name: string | null } | { display_name: string | null }[] | null
+  status?: 'active' | 'reserved' | 'sold'
 }
 
-const PLACEHOLDER_IMAGE = 'https://placehold.co/900x700?text=No+photo'
-
-function toCategories(value: ListingRow['category']): string[] {
-  if (Array.isArray(value)) return value.filter((c) => typeof c === 'string' && c.trim())
-  if (typeof value === 'string' && value.trim()) {
-    // Handles legacy single-category rows and Postgres array literals like {Textbooks,Electronics}
-    const trimmed = value.trim()
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      return trimmed.slice(1, -1).split(',').map((c) => c.replace(/^"|"$/g, '').trim()).filter(Boolean)
-    }
-    return [trimmed]
-  }
-  return []
-}
-
-function toListing(row: ListingRow): Listing {
-  const imageUrl = row.image_path && supabase
-    ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
-    : PLACEHOLDER_IMAGE
+function toListing(row: ListingRow, currentUserId: string | null, currentUserName: string | null): Listing {
+  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+  const sellerName = profile?.display_name?.trim()
   return {
     id: row.id,
     title: row.name,
     price: `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}`,
-    category: toCategories(row.category),
+    category: Array.isArray(row.category) ? row.category : row.category ? [row.category] : [],
     condition: row.condition ?? 'Good condition',
-    image: imageUrl,
-    seller: row.profiles?.display_name ?? 'RPI student',
-    sellerId: row.seller_id ?? null,
+    image: row.image_path && supabase
+      ? supabase.storage.from('listing-images').getPublicUrl(row.image_path).data.publicUrl
+      : listingImageFallback,
+    seller: sellerName || (row.seller_id === currentUserId ? currentUserName : null) || 'RPI student',
+    sellerId: row.seller_id,
     imagePath: row.image_path,
+    status: row.status ?? 'active',
   }
 }
 
@@ -69,6 +63,9 @@ function App() {
   const [showMessages, setShowMessages] = useState(false)
   const [activeCategories, setActiveCategories] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [conditionFilter, setConditionFilter] = useState('All conditions')
+  const [maxPrice, setMaxPrice] = useState<number | null>(null)
   const [favorites, setFavorites] = useState<number[]>([])
   const [showSellForm, setShowSellForm] = useState(false)
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null)
@@ -77,19 +74,30 @@ function App() {
     if (!nextSession) setShowMessages(false)
   }, [])
   const [listings, setListings] = useState<Listing[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserProfile, setCurrentUserProfile] = useState({ fullName: '', email: '', dorm: '' })
+  const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [walletBalance, setWalletBalance] = useState(500)
+  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([])
+  const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false)
+  const [purchaseError, setPurchaseError] = useState<string | null>(null)
+  const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null)
+  const [ratingTransaction, setRatingTransaction] = useState<PendingTransaction | null>(null)
+  const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentPage, setCurrentPage] = useState<'home' | 'profile'>(
+  const [currentPage, setCurrentPage] = useState<'home' | 'profile' | 'seller-profile'>(
     window.location.hash === '#profile' ? 'profile' : 'home',
   )
+  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null)
 
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
   const [newCategory, setNewCategory] = useState<string[]>(['Textbooks'])
   const [newCondition, setNewCondition] = useState('Good condition')
+  const [newImage, setNewImage] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [newImage, setNewImage] = useState<File | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -115,24 +123,106 @@ function App() {
     setNewImage(file)
   }
 
-  useEffect(() => {
-    async function loadListings() {
-      if (!supabase) {
-        setError('Listings are unavailable. Supabase is not configured.')
-        setLoading(false)
-        return
-      }
-      const { data, error } = await supabase
-        .from('listings')
-        .select('id, name, price, category, condition, image_path, seller_id')
-        .order('id', { ascending: false })
-
-      if (error) setError(error.message)
-      else setListings((data as unknown as ListingRow[]).map(toListing))
+  const loadListings = useCallback(async () => {
+    if (!supabase) {
+      setError('Listings are unavailable. Supabase is not configured.')
       setLoading(false)
+      return
     }
-    loadListings()
+    const { data: userData } = await supabase.auth.getUser()
+    const userId = userData.user?.id ?? null
+    const metadata = userData.user?.user_metadata ?? {}
+    const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user?.email?.split('@')[0] || null
+    setCurrentUserId(userId)
+    setCurrentUserProfile({ fullName: metadata.full_name ?? '', email: userData.user?.email ?? '', dorm: metadata.dorm ?? '' })
+
+    const { data, error } = await supabase
+      .from('listings')
+      .select('id, name, price, category, condition, seller_id, image_path, status, profiles(display_name)')
+      .order('id', { ascending: false })
+
+    if (error) setError(error.message)
+    else setListings((data as unknown as ListingRow[])
+      .map((row) => toListing(row, userId, userName)))
+    if (userId) {
+      const { data: favoriteRows, error: favoritesError } = await supabase
+        .from('listing_favorites')
+        .select('listing_id')
+        .eq('user_id', userId)
+      if (favoritesError) setError(favoritesError.message)
+      else setFavorites((favoriteRows ?? []).map((favorite) => favorite.listing_id))
+      const { data: purchaseRows, error: purchasesError } = await supabase
+        .from('purchases')
+        .select('id, title, seller_name, amount, purchased_at, status')
+        .eq('buyer_id', userId)
+      if (purchasesError) setError(purchasesError.message)
+      else setPurchases([...(purchaseRows ?? [])].sort((a, b) => b.purchased_at.localeCompare(a.purchased_at)).map((purchase) => ({
+        id: String(purchase.id),
+        title: purchase.title,
+        seller: purchase.seller_name || 'RPI student',
+        date: new Date(purchase.purchased_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+        price: `$${Number(purchase.amount).toFixed(2).replace(/\.00$/, '')}`,
+        status: purchase.status,
+      })))
+      const { data: wallet } = await supabase
+        .from('fake_wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (wallet) setWalletBalance(Number(wallet.balance))
+
+      const { data: transactionRows, error: transactionsError } = await supabase
+        .from('marketplace_transactions')
+        .select('id, listing_id, seller_id, amount, status')
+        .eq('buyer_id', userId)
+        .eq('status', 'pending_receipt')
+      if (!transactionsError) {
+        setPendingTransactions((transactionRows ?? []).map((transaction) => {
+          const listing = (data as unknown as ListingRow[] | null)?.find((row) => row.id === transaction.listing_id)
+          const sellerProfile = listing?.profiles
+            ? (Array.isArray(listing.profiles) ? listing.profiles[0] : listing.profiles)
+            : null
+          return {
+            id: String(transaction.id),
+            listingId: transaction.listing_id,
+            title: listing?.name ?? 'Marketplace item',
+            seller: sellerProfile?.display_name?.trim() || 'RPI student',
+            sellerId: transaction.seller_id,
+            amount: `$${Number(transaction.amount).toFixed(2).replace(/\.00$/, '')}`,
+          }
+        }))
+      }
+      const { data: ratingRows } = await supabase
+        .from('seller_ratings')
+        .select('seller_id, rating')
+      if (ratingRows) {
+        const totals = new Map<string, { total: number; count: number }>()
+        ratingRows.forEach((row) => {
+          const current = totals.get(row.seller_id) ?? { total: 0, count: 0 }
+          totals.set(row.seller_id, { total: current.total + row.rating, count: current.count + 1 })
+        })
+        setRatings(Object.fromEntries([...totals].map(([sellerId, value]) => [
+          sellerId,
+          { average: value.total / value.count, count: value.count },
+        ])))
+      }
+    }
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadListings()
+  }, [loadListings])
+
+  useListingChanges({
+    onInserted: () => { void loadListings() },
+    onUpdated: () => { void loadListings() },
+    onDeleted: (id) => {
+      setListings((current) => current.filter((listing) => listing.id !== id))
+      setSelectedListing((current) => (current?.id === id ? null : current))
+    },
+  })
 
   useEffect(() => {
     function handleHashChange() {
@@ -149,17 +239,134 @@ function App() {
   }
 
   function returnHome() {
+    setCurrentPage('home')
+    setSelectedSellerId(null)
     window.location.hash = 'top'
   }
 
+  function applySmartFilters(filters: SmartFilters) {
+    setSearch(filters.keywords)
+    setActiveCategories(filters.categories)
+    setConditionFilter(filters.condition ?? 'All conditions')
+    setMaxPrice(filters.max_price)
+  }
+
+  function openSellerProfile(sellerId: string) {
+    setSelectedSellerId(sellerId)
+    setCurrentPage('seller-profile')
+  }
+
   const visibleListings = listings.filter((listing) => {
-    const matchesCategory = activeCategories.length === 0 || listing.category.some((c) => activeCategories.includes(c))
+    if (listing.status !== 'active') return false
+    const matchesCategory = activeCategories.length === 0 || listing.category.some((category) => activeCategories.includes(category))
+    const matchesCondition = conditionFilter === 'All conditions' || listing.condition === conditionFilter
+    const matchesPrice = maxPrice === null || Number(listing.price.replace('$', '')) <= maxPrice
     const searchText = `${listing.title} ${listing.category.join(' ')}`.toLowerCase()
-    return matchesCategory && searchText.includes(search.toLowerCase())
+    return matchesCategory && matchesCondition && matchesPrice && searchText.includes(search.toLowerCase())
   })
 
-  function toggleFavorite(id: number) {
-    setFavorites((current) => current.includes(id) ? current.filter((favoriteId) => favoriteId !== id) : [...current, id])
+  async function toggleFavorite(id: number) {
+    if (!supabase || !currentUserId) {
+      setError('You need to sign in to save listings.')
+      return
+    }
+
+    const isSaved = favorites.includes(id)
+    setFavorites((current) => isSaved ? current.filter((favoriteId) => favoriteId !== id) : [...current, id])
+    const result = isSaved
+      ? await supabase.from('listing_favorites').delete().eq('user_id', currentUserId).eq('listing_id', id)
+      : await supabase.from('listing_favorites').insert({ user_id: currentUserId, listing_id: id })
+    if (result.error) {
+      setFavorites((current) => isSaved ? [...current, id] : current.filter((favoriteId) => favoriteId !== id))
+      setError(result.error.message)
+    }
+  }
+
+  async function confirmPurchase() {
+    if (!supabase || !selectedListing) return
+    setPurchaseError(null)
+    const listingPrice = Number(selectedListing.price.replace('$', ''))
+    if (listingPrice > walletBalance) {
+      setPurchaseError('Insufficient fake money.')
+      return
+    }
+    const { data, error } = await supabase.rpc('start_purchase', { p_listing_id: selectedListing.id })
+    if (error) {
+      setPurchaseError(error.message)
+      return
+    }
+    const result = data as { balance?: number } | null
+    if (typeof result?.balance === 'number') setWalletBalance(result.balance)
+    setListings((current) => current.filter((listing) => listing.id !== selectedListing.id))
+    setShowPurchaseConfirm(false)
+    setSelectedListing(null)
+    setPurchaseMessage('Purchase started. The seller has been sent an automated direct message.')
+  }
+
+  async function confirmReceived(transactionId: string) {
+    if (!supabase) return
+    const transaction = pendingTransactions.find((item) => item.id === transactionId)
+    const { error } = await supabase.rpc('confirm_receipt', { p_transaction_id: Number(transactionId) })
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setPendingTransactions((current) => current.filter((item) => item.id !== transactionId))
+    await loadListings()
+    if (transaction) setRatingTransaction(transaction)
+  }
+
+  async function cancelPurchase(transactionId: string) {
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('cancel_purchase', { p_transaction_id: Number(transactionId) })
+    if (error) {
+      setError(error.message)
+      return
+    }
+    const result = data as { refund?: number } | null
+    if (typeof result?.refund === 'number') setWalletBalance((current) => current + (result.refund ?? 0))
+    setPendingTransactions((current) => current.filter((item) => item.id !== transactionId))
+    setPurchaseMessage('Purchase canceled. Your fake money was refunded and the item was returned to the listings.')
+    await loadListings()
+  }
+
+  async function rateSeller(transactionId: string, sellerId: string, rating: number) {
+    if (!supabase) return
+    const { error } = await supabase.rpc('rate_seller', {
+      p_transaction_id: Number(transactionId),
+      p_seller_id: sellerId,
+      p_rating: rating,
+    })
+    if (error) setError(error.message)
+    else setRatingTransaction(null)
+  }
+
+  async function deleteListing(listing: { id: number; title: string; image: string; sellerId?: string; status?: 'active' | 'reserved' | 'sold' }) {
+    if (!supabase || !currentUserId || listing.sellerId !== currentUserId) {
+      setError('You can only delete your own listings.')
+      return
+    }
+    if (listing.status && listing.status !== 'active') {
+      setError('Reserved or sold listings cannot be deleted.')
+      return
+    }
+    if (!window.confirm(`Delete "${listing.title}"?`)) return
+
+    const { error: deleteError } = await supabase.from('listings').delete().eq('id', listing.id).eq('seller_id', currentUserId)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    if (listing.image) {
+      const marker = '/listing-images/'
+      const imagePath = listing.image.includes(marker) ? listing.image.split(marker)[1] : null
+      if (imagePath) {
+        const { error: imageDeleteError } = await supabase.storage.from('listing-images').remove([imagePath])
+        if (imageDeleteError) setError(`Listing deleted, but its image could not be removed: ${imageDeleteError.message}`)
+      }
+    }
+    setListings((current) => current.filter((item) => item.id !== listing.id))
+    setFavorites((current) => current.filter((id) => id !== listing.id))
   }
 
   function toggleCategory(category: string) {
@@ -254,7 +461,9 @@ function App() {
       return
     }
 
-    setListings((current) => [toListing({ ...data, profiles: null } as ListingRow), ...current])
+    const metadata = userData.user.user_metadata ?? {}
+    const userName = metadata.full_name?.trim() || metadata.username?.trim() || userData.user.email?.split('@')[0] || null
+    setListings((current) => [toListing({ ...data, profiles: null } as ListingRow, userData.user.id, userName), ...current])
     resetSellForm()
     setShowSellForm(false)
   }
@@ -267,6 +476,10 @@ function App() {
 
   async function handleDeleteListing(listing: Listing) {
     if (!supabase || !session) return
+    if (listing.status !== 'active') {
+      setDeleteError('Reserved or sold listings cannot be deleted.')
+      return
+    }
     setDeleting(true)
     setDeleteError(null)
 
@@ -302,6 +515,7 @@ function App() {
           <a className="wordmark" href="#top" aria-label="RenSeller home"><span>REN</span>SELLER</a>
           <p className="campus-note">THE RPI STUDENT MARKETPLACE</p>
           <nav className="account-nav" aria-label="Account navigation">
+            {session && <span className="wallet-home-balance">${walletBalance.toFixed(2).replace(/\.00$/, '')}</span>}
             {session && (
               <button className="text-button messages-nav-button" type="button" onClick={() => setShowMessages(true)}>
                 Messages
@@ -318,6 +532,7 @@ function App() {
         <div className="search-row page-width">
           <label className="search-box"><span className="search-icon" aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for anything" aria-label="Search listings" />{search && <button type="button" className="clear-search" onClick={() => setSearch('')} aria-label="Clear search">×</button>}</label>
           <button className="search-button" type="button" aria-label="Submit search">Search</button>
+          <SmartSearchButton query={search} accessToken={session?.access_token ?? null} onResult={applySmartFilters} />
         </div>
       </header>
 
@@ -326,7 +541,26 @@ function App() {
           <Profile
             onBack={returnHome}
             savedListings={listings.filter((listing) => favorites.includes(listing.id))}
+            postedListings={listings.filter((listing) => listing.sellerId === currentUserId)}
             onToggleSaved={toggleFavorite}
+            onDeleteListing={deleteListing}
+            purchases={purchases}
+            walletBalance={walletBalance}
+            pendingTransactions={pendingTransactions}
+            onConfirmReceived={confirmReceived}
+            onCancelPurchase={cancelPurchase}
+            onRateSeller={rateSeller}
+            rating={ratings[currentUserId ?? '']}
+          />
+        ) : currentPage === 'seller-profile' && selectedSellerId ? (
+          <SellerProfile
+            sellerName={listings.find((listing) => listing.sellerId === selectedSellerId)?.seller ?? 'RPI student'}
+            listings={listings.filter((listing) => listing.sellerId === selectedSellerId && listing.status === 'active')}
+            soldListings={listings.filter((listing) => listing.sellerId === selectedSellerId && listing.status === 'sold')}
+            rating={ratings[selectedSellerId]}
+            profile={selectedSellerId === currentUserId ? currentUserProfile : undefined}
+            savedListings={selectedSellerId === currentUserId ? listings.filter((listing) => favorites.includes(listing.id)) : []}
+            onBack={returnHome}
           />
         ) : (
           <>
@@ -380,8 +614,25 @@ function App() {
                   <h2>Freshly listed</h2>
                   <p>{visibleListings.length} items listed by RPI students</p>
                 </div>
-                <button className="filter-button" type="button">Filter <span></span></button>
+                <button className="filter-button" type="button" onClick={() => setFilterOpen((open) => !open)} aria-expanded={filterOpen}>Filter <span></span></button>
               </div>
+              {maxPrice !== null && (
+                <p className="active-filter">
+                  <span>Under ${maxPrice}</span>
+                  <button className="text-button" type="button" onClick={() => setMaxPrice(null)}>Clear price limit</button>
+                </p>
+              )}
+              {filterOpen && (
+                <label className="filter-control">Condition
+                  <select value={conditionFilter} onChange={(event) => setConditionFilter(event.target.value)}>
+                    <option>All conditions</option>
+                    <option>New</option>
+                    <option>Like new</option>
+                    <option>Good condition</option>
+                    <option>Fair</option>
+                  </select>
+                </label>
+              )}
 
               {loading ? (
                 <p>Loading…</p>
@@ -411,30 +662,32 @@ function App() {
                           type="button"
                           aria-label={favorites.includes(listing.id) ? 'Remove from favorites' : 'Save listing'}
                         >
-                          {favorites.includes(listing.id) ? '♥' : '♡'}
+                      {favorites.includes(listing.id) ? '♥' : '♡'}
                         </button>
-                        <span className="condition-tag">{listing.condition}</span>
-                      </div>
-                      <div className="listing-details">
-                        <div className="price-line">
-                          <h3>{listing.title}</h3>
-                          <strong>{listing.price}</strong>
-                        </div>
-                        <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}</p>
-                        <p className="seller-line">
-                          <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
-                        </p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <strong>No listings found</strong>
-                  <span>Try another search or category.</span>
-                </div>
-              )}
-            </section>
+                    <span className="condition-tag">{listing.condition}</span>
+                  </div>
+                  <div className="listing-details">
+                    <div className="price-line">
+                      <h3>{listing.title}</h3>
+                      <strong>{listing.price}</strong>
+                    </div>
+                    <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}</p>
+                    <p className="seller-line">
+                      <button type="button" className="seller-profile-link" onClick={(event) => { event.stopPropagation(); openSellerProfile(listing.sellerId) }}>
+                        <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
+                      </button>
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>No listings found</strong>
+              <span>Try another search or category.</span>
+            </div>
+          )}
+        </section>
           </>
         )}
       </main>
@@ -455,8 +708,61 @@ function App() {
                   <button className="cancel-button delete-button" type="button" onClick={() => setConfirmingDelete(true)}>Delete listing</button>
                 )
               ) : (
-                <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+                <>
+                  <button className="sell-button" type="button" onClick={() => { setPurchaseError(null); setShowPurchaseConfirm(true) }}>Buy item</button>
+                  <button className="sell-button" type="button" disabled title="Open Messages from the navigation to contact a student">Message seller <span>→</span></button>
+                </>
               )}</div>{deleteError && <p role="alert">{deleteError}</p>}</div></div></div>}
+
+      {showPurchaseConfirm && selectedListing && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="purchase-title">
+            <p className="eyebrow">FAKE MONEY TRANSACTION</p>
+            <h2 id="purchase-title">Confirm purchase</h2>
+            <p>{selectedListing.title}</p>
+            <div className="transaction-summary">
+              <span>Price <strong>{selectedListing.price}</strong></span>
+              <span>Current balance <strong>${walletBalance.toFixed(2)}</strong></span>
+              <span>Balance after purchase <strong>${Math.max(0, walletBalance - Number(selectedListing.price.replace('$', ''))).toFixed(2)}</strong></span>
+            </div>
+            {purchaseError && <p role="alert">{purchaseError}</p>}
+            <div className="modal-actions">
+              <button className="cancel-button" type="button" onClick={() => setShowPurchaseConfirm(false)}>Cancel</button>
+              <button className="sell-button" type="button" onClick={confirmPurchase}>Confirm purchase</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purchaseMessage && (
+        <div className="transaction-notice" role="status">
+          <span>{purchaseMessage}</span>
+          <button type="button" aria-label="Dismiss purchase message" onClick={() => setPurchaseMessage(null)}>×</button>
+        </div>
+      )}
+
+      {ratingTransaction && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="rating-title">
+            <p className="eyebrow">TRANSACTION COMPLETE</p>
+            <h2 id="rating-title">Rate {ratingTransaction.seller}</h2>
+            <p>You confirmed receipt of {ratingTransaction.title}. How was the seller?</p>
+            <div className="rating-actions">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  type="button"
+                  aria-label={`Rate seller ${rating} stars`}
+                  onClick={() => rateSeller(ratingTransaction.id, ratingTransaction.sellerId, rating)}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <button className="cancel-button" type="button" onClick={() => setRatingTransaction(null)}>Skip rating</button>
+          </div>
+        </div>
+      )}
 
       {showSellForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSellForm(false) }}>
@@ -503,6 +809,9 @@ function App() {
                 <option>Good condition</option>
                 <option>Fair</option>
               </select>
+            </label>
+            <label>Listing image
+              <input type="file" accept="image/*" onChange={(event) => setNewImage(event.target.files?.[0] ?? null)} />
             </label>
             {formError && <p role="alert">{formError}</p>}
             <div className="modal-actions">
