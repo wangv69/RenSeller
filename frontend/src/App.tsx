@@ -39,9 +39,9 @@ type ListingRow = {
   status?: 'active' | 'reserved' | 'sold'
 }
 
-function toListing(row: ListingRow, currentUserId: string | null, currentUserName: string | null): Listing {
+function toListing(row: ListingRow, currentUserId: string | null, currentUserName: string | null, directoryName?: string): Listing {
   const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
-  const sellerName = profile?.display_name?.trim()
+  const sellerName = profile?.display_name?.trim() || directoryName?.trim()
   return {
     id: row.id,
     title: row.name,
@@ -141,9 +141,18 @@ function App() {
       .select('id, name, price, category, condition, seller_id, image_path, status, profiles(display_name)')
       .order('id', { ascending: false })
 
+    let names = new Map<string, string>()
     if (error) setError(error.message)
-    else setListings((data as unknown as ListingRow[])
-      .map((row) => toListing(row, userId, userName)))
+    else {
+      const rows = data as unknown as ListingRow[]
+      // Display names come from profiles; the student directory only fills in sellers without one.
+      const sellerIds = [...new Set(rows.map((row) => row.seller_id))]
+      const { data: members } = sellerIds.length > 0
+        ? await supabase.from('messaging_members').select('id, full_name').in('id', sellerIds)
+        : { data: null }
+      names = new Map((members ?? []).map((member) => [member.id as string, member.full_name as string]))
+      setListings(rows.map((row) => toListing(row, userId, userName, names.get(row.seller_id))))
+    }
     if (userId) {
       const { data: favoriteRows, error: favoritesError } = await supabase
         .from('listing_favorites')
@@ -186,7 +195,7 @@ function App() {
             id: String(transaction.id),
             listingId: transaction.listing_id,
             title: listing?.name ?? 'Marketplace item',
-            seller: sellerProfile?.display_name?.trim() || 'RPI student',
+            seller: sellerProfile?.display_name?.trim() || names.get(transaction.seller_id)?.trim() || 'RPI student',
             sellerId: transaction.seller_id,
             amount: `$${Number(transaction.amount).toFixed(2).replace(/\.00$/, '')}`,
           }

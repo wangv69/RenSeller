@@ -3,9 +3,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
-const { client, listingsQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain } = vi.hoisted(() => {
+const { client, listingsQuery, membersQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain } = vi.hoisted(() => {
   const listingsQuery = { insert: vi.fn(), select: vi.fn(), order: vi.fn(), single: vi.fn(), delete: vi.fn(), eq: vi.fn(), then: vi.fn() }
   const favoritesQuery = { select: vi.fn(), eq: vi.fn(), insert: vi.fn(), delete: vi.fn(), maybeSingle: vi.fn() }
+  const membersQuery = { select: vi.fn(), in: vi.fn() }
   const bucket = { upload: vi.fn(), remove: vi.fn(), getPublicUrl: vi.fn() }
   const favoriteDeleteChain = { eq: vi.fn() }
   const walletQuery = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() }
@@ -14,7 +15,7 @@ const { client, listingsQuery, favoritesQuery, walletQuery, purchaseQuery, trans
   const ratingQuery = { select: vi.fn(), then: vi.fn() }
   favoriteDeleteChain.eq.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
   const client = { auth: { getUser: vi.fn() }, from: vi.fn(), storage: { from: vi.fn() }, channel: vi.fn(), removeChannel: vi.fn(), rpc: vi.fn() }
-  return { client, listingsQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain }
+  return { client, listingsQuery, membersQuery, favoritesQuery, walletQuery, purchaseQuery, transactionQuery, ratingQuery, bucket, favoriteDeleteChain }
 })
 const changeHandlers: Record<string, (payload: unknown) => void> = {}
 const changeChannel = { on: vi.fn(), subscribe: vi.fn() }
@@ -39,6 +40,8 @@ beforeEach(() => {
     ],
     error: null,
   })
+  membersQuery.select.mockReturnValue(membersQuery)
+  membersQuery.in.mockResolvedValue({ data: [], error: null })
   favoritesQuery.select.mockReturnValue(favoritesQuery)
   favoritesQuery.eq.mockImplementation((field: string) => Promise.resolve(field === 'listing_id'
     ? { data: [], error: null }
@@ -65,6 +68,7 @@ beforeEach(() => {
   listingsQuery.single.mockResolvedValue({ data: { id: 3, name: 'New book', price: 15, category: ['Textbooks'], condition: 'Good condition', seller_id: 'user-1', image_path: null }, error: null })
   client.from.mockImplementation((table: string) => {
     if (table === 'listings') return listingsQuery
+    if (table === 'messaging_members') return membersQuery
     if (table === 'fake_wallets') return walletQuery
     if (table === 'purchases') return purchaseQuery
     if (table === 'marketplace_transactions') return transactionQuery
@@ -434,4 +438,56 @@ it('cancels a pending purchase and refunds the wallet', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel purchase' }))
   expect(await screen.findByRole('status')).toHaveTextContent('Purchase canceled')
   expect(client.rpc).toHaveBeenCalledWith('cancel_purchase', { p_transaction_id: 8 })
+})
+
+function sellerLine(title: string) {
+  return within(screen.getByText(title).closest('article')!).getByText(/Listed by/)
+}
+it('prefers the seller\'s profile display name over the directory name', async () => {
+  membersQuery.in.mockResolvedValue({ data: [{ id: 'user-2', full_name: 'Priya Shah' }], error: null })
+  await start()
+  expect(sellerLine('Desk lamp')).toHaveTextContent('Listed by Other student')
+  expect(within(screen.getByText('Desk lamp').closest('article')!).getByText('O')).toBeInTheDocument()
+  expect(screen.queryByText(/Priya Shah/)).not.toBeInTheDocument()
+})
+it('uses the student directory name when the seller has no display name', async () => {
+  listingsQuery.order.mockResolvedValue({ data: [
+    { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, profiles: { display_name: '   ' } },
+  ], error: null })
+  membersQuery.in.mockResolvedValue({ data: [{ id: 'user-2', full_name: 'Priya Shah' }], error: null })
+  render(<App />)
+  await screen.findByText('Desk lamp')
+  expect(membersQuery.select).toHaveBeenCalledWith('id, full_name')
+  expect(sellerLine('Desk lamp')).toHaveTextContent('Listed by Priya Shah')
+})
+it('asks the directory once for each distinct seller', async () => {
+  listingsQuery.order.mockResolvedValue({ data: [
+    { id: 1, name: 'Calculus book', price: 12, category: ['Textbooks'], condition: 'New', seller_id: 'user-1', image_path: null, profiles: null },
+    { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, profiles: null },
+    { id: 3, name: 'Mini fridge', price: 40, category: ['Furniture'], condition: 'Good condition', seller_id: 'user-2', image_path: null, profiles: null },
+  ], error: null })
+  await start()
+  expect(membersQuery.in).toHaveBeenCalledTimes(1)
+  expect(membersQuery.in).toHaveBeenCalledWith('id', ['user-1', 'user-2'])
+})
+it("falls back to the listing's profile name, then to RPI student, when the directory has no entry", async () => {
+  listingsQuery.order.mockResolvedValue({ data: [
+    { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, profiles: { display_name: 'Other student' } },
+    { id: 3, name: 'Mini fridge', price: 40, category: ['Furniture'], condition: 'Good condition', seller_id: 'user-3', image_path: null, profiles: null },
+  ], error: null })
+  render(<App />)
+  await screen.findByText('Desk lamp')
+  expect(sellerLine('Desk lamp')).toHaveTextContent('Listed by Other student')
+  expect(sellerLine('Mini fridge')).toHaveTextContent('Listed by RPI student')
+})
+it('still shows the listings with fallback names when the directory lookup fails', async () => {
+  membersQuery.in.mockResolvedValue({ data: null, error: { message: 'Directory offline' } })
+  await start()
+  expect(sellerLine('Desk lamp')).toHaveTextContent('Listed by Other student')
+  expect(screen.queryByText('Directory offline')).not.toBeInTheDocument()
+})
+it("shows the seller's display name in the listing details", async () => {
+  await start()
+  fireEvent.keyDown(screen.getByText('Desk lamp').closest('article')!, { key: 'Enter' })
+  expect(within(screen.getByRole('dialog')).getByText(/Listed by Other student/)).toBeInTheDocument()
 })
