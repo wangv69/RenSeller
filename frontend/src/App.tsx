@@ -8,6 +8,7 @@ import Profile, { SellerProfile, type Purchase, type PendingTransaction } from '
 import { useListingChanges } from './useListingChanges'
 import SmartSearchButton from './SmartSearchButton'
 import SchedulePanel from './SchedulePanel'
+import { normalizeCourseCode } from './lib/scheduleUpload'
 import type { SmartFilters } from './lib/smartSearch'
 
 type Listing = {
@@ -20,6 +21,7 @@ type Listing = {
   seller: string
   sellerId: string
   imagePath: string | null
+  courseCode: string | null
   status: 'active' | 'reserved' | 'sold'
 }
 
@@ -36,6 +38,7 @@ type ListingRow = {
   condition: string
   seller_id: string
   image_path: string | null
+  course_code?: string | null
   profiles: { display_name: string | null } | { display_name: string | null }[] | null
   status?: 'active' | 'reserved' | 'sold'
 }
@@ -55,6 +58,7 @@ function toListing(row: ListingRow, currentUserId: string | null, currentUserNam
     seller: sellerName || (row.seller_id === currentUserId ? currentUserName : null) || 'RPI student',
     sellerId: row.seller_id,
     imagePath: row.image_path,
+    courseCode: row.course_code ?? null,
     status: row.status ?? 'active',
   }
 }
@@ -96,6 +100,7 @@ function App() {
   const [newPrice, setNewPrice] = useState('')
   const [newCategory, setNewCategory] = useState<string[]>(['Textbooks'])
   const [newCondition, setNewCondition] = useState('Good condition')
+  const [newCourse, setNewCourse] = useState('')
   const [newImage, setNewImage] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -139,7 +144,7 @@ function App() {
 
     const { data, error } = await supabase
       .from('listings')
-      .select('id, name, price, category, condition, seller_id, image_path, status, profiles(display_name)')
+      .select('id, name, price, category, condition, seller_id, image_path, course_code, status, profiles(display_name)')
       .order('id', { ascending: false })
 
     let names = new Map<string, string>()
@@ -271,8 +276,10 @@ function App() {
     const matchesCategory = activeCategories.length === 0 || listing.category.some((category) => activeCategories.includes(category))
     const matchesCondition = conditionFilter === 'All conditions' || listing.condition === conditionFilter
     const matchesPrice = maxPrice === null || Number(listing.price.replace('$', '')) <= maxPrice
-    const searchText = `${listing.title} ${listing.category.join(' ')}`.toLowerCase()
-    return matchesCategory && matchesCondition && matchesPrice && searchText.includes(search.toLowerCase())
+    const searchText = `${listing.title} ${listing.category.join(' ')} ${listing.courseCode ?? ''}`.toLowerCase()
+    const searchedCourse = normalizeCourseCode(search)
+    const matchesSearch = searchText.includes(search.toLowerCase()) || (searchedCourse !== null && listing.courseCode === searchedCourse)
+    return matchesCategory && matchesCondition && matchesPrice && matchesSearch
   })
 
   async function toggleFavorite(id: number) {
@@ -404,6 +411,7 @@ function App() {
     setNewPrice('')
     setNewCategory(['Textbooks'])
     setNewCondition('Good condition')
+    setNewCourse('')
     setNewImage(null)
     setFormError(null)
   }
@@ -426,6 +434,16 @@ function App() {
     if (chosenCategories.length === 0) {
       setFormError('Choose at least one category.')
       return
+    }
+
+    // A course only makes sense for textbooks; store it in one shape so searches can match it.
+    let courseCode: string | null = null
+    if (chosenCategories.includes('Textbooks') && newCourse.trim()) {
+      courseCode = normalizeCourseCode(newCourse)
+      if (!courseCode) {
+        setFormError('Enter a course code like MATH-1010, or leave it blank.')
+        return
+      }
     }
 
     const { data: userData } = await supabase.auth.getUser()
@@ -458,8 +476,9 @@ function App() {
         condition: newCondition,
         seller_id: userData.user.id,
         image_path: imagePath,
+        course_code: courseCode,
       })
-      .select('id, name, price, category, condition, image_path, seller_id')
+      .select('id, name, price, category, condition, image_path, course_code, seller_id')
       .single()
     setSaving(false)
 
@@ -683,7 +702,7 @@ function App() {
                       <h3>{listing.title}</h3>
                       <strong>{listing.price}</strong>
                     </div>
-                    <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}</p>
+                    <p className="listing-meta">RPI campus <span>·</span> {listing.category.join(', ')}{listing.courseCode && <> <span>·</span> <span className="course-tag">For {listing.courseCode}</span></>}</p>
                     <p className="seller-line">
                       <button type="button" className="seller-profile-link" onClick={(event) => { event.stopPropagation(); openSellerProfile(listing.sellerId) }}>
                         <span className="avatar">{listing.seller[0]}</span> Listed by {listing.seller}
@@ -708,7 +727,7 @@ function App() {
 
       <footer className="site-footer"><div className="page-width"><span className="wordmark small"><span>REN</span>SELLER</span><span>MADE FOR STUDENTS, BY STUDENTS.</span><span>© 2026 RENSELLER</span></div></footer>
 
-      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category.join(', ')}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p><p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button>{session?.user.id === selectedListing.sellerId ? (
+      {selectedListing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeListingDetails() }}><div className="listing-modal" role="dialog" aria-modal="true" aria-labelledby="listing-title"><button className="modal-close" onClick={closeListingDetails} type="button" aria-label="Close listing details">×</button><div className="listing-modal-image"><img src={selectedListing.image} alt={selectedListing.title} /><span className="condition-tag">{selectedListing.condition}</span></div><div className="listing-modal-content"><div className="listing-modal-heading"><div><p className="eyebrow">{selectedListing.category.join(', ')}</p><h2 id="listing-title">{selectedListing.title}</h2></div><strong>{selectedListing.price}</strong></div><p className="listing-modal-meta">RPI campus <span>·</span> Listed by {selectedListing.seller}</p>{selectedListing.courseCode && <p className="listing-modal-meta">Course: {selectedListing.courseCode}</p>}<p className="modal-copy">A campus pickup listing in {selectedListing.condition.toLowerCase()}. Message the seller to ask a question or arrange a convenient meeting time.</p><div className="listing-modal-actions"><button className="favorite-detail-button" type="button" onClick={() => toggleFavorite(selectedListing.id)}>{favorites.includes(selectedListing.id) ? '♥ Saved' : '♡ Save listing'}</button>{session?.user.id === selectedListing.sellerId ? (
                 confirmingDelete ? (
                   <>
                     <button className="cancel-button" type="button" onClick={() => setConfirmingDelete(false)} disabled={deleting}>Keep listing</button>
@@ -814,6 +833,12 @@ function App() {
                 })}
               </div>
             </fieldset>
+            {newCategory.includes('Textbooks') && (
+              <label>Course (optional)
+                <input value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="e.g. MATH-1010" />
+                <small>Helps students taking that class find your book.</small>
+              </label>
+            )}
             <label>Condition
               <select value={newCondition} onChange={(e) => setNewCondition(e.target.value)}>
                 <option>New</option>

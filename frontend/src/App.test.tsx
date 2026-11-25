@@ -524,3 +524,90 @@ it('reads a schedule from the home page using the signed-in token', async () => 
   expect(await screen.findByText('MATH-1010')).toBeInTheDocument()
   expect(fetchMock).toHaveBeenCalledWith('/api/schedule/extract', expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }))
 })
+
+const textbookRows = [
+  { id: 1, name: 'Calculus book', price: 12, category: ['Textbooks'], condition: 'New', seller_id: 'user-1', image_path: null, course_code: 'MATH-1010', profiles: null },
+  { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, course_code: null, profiles: null },
+]
+async function openSellForm() {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  fireEvent.change(screen.getByLabelText('Item title'), { target: { value: 'Physics book' } })
+  fireEvent.change(screen.getByLabelText('Price'), { target: { value: '30' } })
+}
+it('offers an optional course field only while Textbooks is selected', async () => {
+  await openSellForm()
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByLabelText(/Course/)).toBeInTheDocument()
+  fireEvent.click(dialog.getByRole('button', { name: /Textbooks/ }))
+  expect(dialog.queryByLabelText(/Course/)).not.toBeInTheDocument()
+  fireEvent.click(dialog.getByRole('button', { name: /^Textbooks/ }))
+  expect(dialog.getByLabelText(/Course/)).toBeInTheDocument()
+})
+it.each([['math 1010', 'MATH-1010'], ['csci1100', 'CSCI-1100'], ['  phys_1100 ', 'PHYS-1100']])('saves the course %j as %s', async (typed, saved) => {
+  await openSellForm()
+  fireEvent.change(screen.getByLabelText(/Course/), { target: { value: typed } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  await waitFor(() => expect(listingsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ course_code: saved })))
+})
+it('saves no course when the field is left blank', async () => {
+  await openSellForm()
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  await waitFor(() => expect(listingsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ course_code: null })))
+})
+it('rejects a course that is not in the form DEPT-1234 before posting', async () => {
+  await openSellForm()
+  fireEvent.change(screen.getByLabelText(/Course/), { target: { value: 'hello' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('like MATH-1010')
+  expect(listingsQuery.insert).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('Item title')).toHaveValue('Physics book')
+})
+it('ignores a typed course when the item is no longer a textbook', async () => {
+  await openSellForm()
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.change(screen.getByLabelText(/Course/), { target: { value: 'math 1010' } })
+  fireEvent.click(dialog.getByRole('button', { name: 'Furniture' }))
+  fireEvent.click(dialog.getByRole('button', { name: /Textbooks/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  await waitFor(() => expect(listingsQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ course_code: null })))
+})
+it('asks the database for each listing course', async () => {
+  render(<App />)
+  await screen.findByText('Calculus book')
+  expect(listingsQuery.select).toHaveBeenCalledWith(expect.stringContaining('course_code'))
+})
+it('shows the course on the listing card and in the details', async () => {
+  listingsQuery.order.mockResolvedValue({ data: textbookRows, error: null })
+  render(<App />)
+  await screen.findByText('Calculus book')
+  const card = within(screen.getByText('Calculus book').closest('article')!)
+  expect(card.getByText(/For MATH-1010/)).toBeInTheDocument()
+  expect(within(screen.getByText('Desk lamp').closest('article')!).queryByText(/^For /)).not.toBeInTheDocument()
+  fireEvent.keyDown(screen.getByText('Calculus book').closest('article')!, { key: 'Enter' })
+  expect(within(screen.getByRole('dialog')).getByText(/Course: MATH-1010/)).toBeInTheDocument()
+})
+it.each(['math 1010', 'math1010', 'MATH-1010', 'Math_1010'])('finds a textbook when searching for the course %j', async (typed) => {
+  listingsQuery.order.mockResolvedValue({ data: textbookRows, error: null })
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.change(screen.getByLabelText('Search listings'), { target: { value: typed } })
+  expect(screen.getByText('Calculus book')).toBeInTheDocument()
+  expect(screen.queryByText('Desk lamp')).not.toBeInTheDocument()
+})
+it('does not match a textbook for a different course', async () => {
+  listingsQuery.order.mockResolvedValue({ data: textbookRows, error: null })
+  render(<App />)
+  await screen.findByText('Calculus book')
+  fireEvent.change(screen.getByLabelText('Search listings'), { target: { value: 'csci 1100' } })
+  expect(screen.getByText('No listings found')).toBeInTheDocument()
+})
+it('clears the course field after a listing is posted', async () => {
+  await openSellForm()
+  fireEvent.change(screen.getByLabelText(/Course/), { target: { value: 'math 1010' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Post listing' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
+  expect(screen.getByLabelText(/Course/)).toHaveValue('')
+})
