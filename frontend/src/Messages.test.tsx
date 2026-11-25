@@ -125,3 +125,73 @@ it('confirms a previously persisted message after an ambiguous insert error', as
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))
   expect(within(screen.getByRole('log')).getAllByText('Hello')).toHaveLength(1)
 })
+
+const people = [{ id: 'a', full_name: 'Alex Adams' }, { id: 'b', full_name: 'Blake Brown' }, { id: 'c', full_name: 'Casey Clark' }]
+const recent = [
+  { id: 'm3', sender_id: 'c', recipient_id: 'self', body: 'Is it available?', created_at: '2026-03-03T12:00:00Z' },
+  { id: 'm2', sender_id: 'self', recipient_id: 'a', body: 'See you at 5', created_at: '2026-03-02T12:00:00Z' },
+  { id: 'm1', sender_id: 'c', recipient_id: 'self', body: 'Hi there', created_at: '2026-03-01T12:00:00Z' },
+]
+async function startOrdered(rows: unknown[] | null = recent, error: Error | null = null) {
+  directory = query({ data: people, error: null })
+  history.limit.mockResolvedValue({ data: rows, error })
+  render(<Messages isOpen userId="self" onClose={vi.fn()} />)
+  await screen.findByRole('textbox', { name: 'Message about pickup' })
+  await waitFor(() => expect(history.limit).toHaveBeenCalled())
+}
+const order = () => within(screen.getByLabelText('Registered students')).getAllByRole('button').map((button) => button.querySelector('strong')?.textContent)
+
+it('lists the most recently active conversation first and people you have not messaged last, alphabetically', async () => {
+  await startOrdered()
+  await waitFor(() => expect(order()).toEqual(['Casey Clark', 'Alex Adams', 'Blake Brown']))
+})
+it('shows the latest message of every conversation as its preview', async () => {
+  await startOrdered()
+  await waitFor(() => expect(order()[0]).toBe('Casey Clark'))
+  const list = within(screen.getByLabelText('Registered students'))
+  expect(list.getByRole('button', { name: /Casey Clark/ })).toHaveTextContent('Is it available?')
+  expect(list.getByRole('button', { name: /Casey Clark/ })).not.toHaveTextContent('Hi there')
+  expect(list.getByRole('button', { name: /Alex Adams/ })).toHaveTextContent('See you at 5')
+  expect(list.getByRole('button', { name: /Blake Brown/ })).toHaveTextContent('Start a pickup conversation')
+})
+it('opens the most recent conversation by default', async () => {
+  await startOrdered()
+  expect(await screen.findByRole('heading', { name: 'Casey Clark' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Casey Clark/ })).toHaveAttribute('aria-pressed', 'true')
+})
+it('falls back to alphabetical order when nobody has been messaged', async () => {
+  await startOrdered([])
+  await waitFor(() => expect(order()).toEqual(['Alex Adams', 'Blake Brown', 'Casey Clark']))
+})
+it('falls back to alphabetical order without an error when the activity lookup fails', async () => {
+  await startOrdered(null, new Error('offline'))
+  await waitFor(() => expect(order()).toEqual(['Alex Adams', 'Blake Brown', 'Casey Clark']))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'Message about pickup' })).toBeInTheDocument()
+})
+it('asks for the newest messages involving the student, newest first', async () => {
+  await startOrdered()
+  expect(history.or).toHaveBeenCalledWith('sender_id.eq.self,recipient_id.eq.self')
+  expect(history.order).toHaveBeenCalledWith('created_at', { ascending: false })
+  expect(history.limit).toHaveBeenCalledWith(500)
+})
+it('moves a conversation to the top when you send a message in it', async () => {
+  await startOrdered()
+  await waitFor(() => expect(order()[0]).toBe('Casey Clark'))
+  fireEvent.click(screen.getByRole('button', { name: /Blake Brown/ }))
+  const sent = { id: 'm9', sender_id: 'self', recipient_id: 'b', body: 'Still for sale?', created_at: '2026-03-10T12:00:00Z' }
+  client.from.mockReturnValue(query({ data: sent, error: null }))
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Still for sale?' } })
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+  await waitFor(() => expect(order()).toEqual(['Blake Brown', 'Casey Clark', 'Alex Adams']))
+  expect(screen.getByRole('button', { name: /Blake Brown/ })).toHaveAttribute('aria-pressed', 'true')
+})
+it('moves a student to the top when they message you, without changing the open conversation', async () => {
+  await startOrdered()
+  await waitFor(() => expect(order()[0]).toBe('Casey Clark'))
+  fireEvent.click(screen.getByRole('button', { name: /Alex Adams/ }))
+  history.limit.mockResolvedValue({ data: [{ id: 'm8', sender_id: 'b', recipient_id: 'self', body: 'Hey!', created_at: '2026-03-09T12:00:00Z' }, ...recent], error: null })
+  act(() => channel.on.mock.calls[0][2]())
+  await waitFor(() => expect(order()[0]).toBe('Blake Brown'))
+  expect(screen.getByRole('button', { name: /Alex Adams/ })).toHaveAttribute('aria-pressed', 'true')
+})

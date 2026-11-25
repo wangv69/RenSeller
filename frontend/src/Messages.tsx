@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { supabase } from './lib/supabase'
 import './Messages.css'
@@ -38,11 +38,45 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
   const composer = useRef<HTMLTextAreaElement>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMemberId, setSelectedMemberId] = useState('')
+  const [latest, setLatest] = useState<Record<string, Message>>({})
   const [directoryStatus, setDirectoryStatus] = useState('Loading students...')
-  const member = members.find((member) => member.id === selectedMemberId) ?? members[0]
+  const lastMessage = (id: string) => {
+    const fromList = latest[id]
+    const fromThread = threads[id]?.at(-1)
+    return fromList && fromThread ? (fromThread.created_at > fromList.created_at ? fromThread : fromList) : fromList ?? fromThread
+  }
+  // Most recent conversation first; students you have not messaged follow, alphabetically.
+  const orderedMembers = [...members].sort((a, b) =>
+    (lastMessage(b.id)?.created_at ?? '').localeCompare(lastMessage(a.id)?.created_at ?? '') || a.full_name.localeCompare(b.full_name))
+  const member = members.find((member) => member.id === selectedMemberId) ?? orderedMembers[0]
   const messages = member ? threads[member.id] ?? [] : []
   const draft = member ? drafts[member.id] ?? '' : ''
   const memberId = member?.id
+
+  // The newest message with each student, so the list can be ordered by recent activity.
+  const refreshLatest = useCallback(async () => {
+    const client = supabase
+    if (!client) return
+    try {
+      const { data, error } = await client.from('direct_messages')
+        .select('id, sender_id, recipient_id, body, created_at')
+        .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+        .order('created_at', { ascending: false }).limit(500)
+      if (error || !Array.isArray(data)) return
+      const partnerOf = (message: Message) => message.sender_id === userId ? message.recipient_id : message.sender_id
+      const next: Record<string, Message> = {}
+      for (const message of data as Message[]) if (!(partnerOf(message) in next)) next[partnerOf(message)] = message
+      setLatest(next)
+      // Open the most recent conversation once, unless the student has already picked one.
+      if (data.length > 0) setSelectedMemberId((current) => current || partnerOf(data[0] as Message))
+    } catch {
+      // The list simply stays alphabetical until the next refresh.
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (isOpen) queueMicrotask(() => { void refreshLatest() })
+  }, [isOpen, refreshLatest])
 
   useEffect(() => {
     if (!isOpen) return
@@ -122,16 +156,16 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
       }
     })
     const channel = client.channel(`messages:${userId}:${memberId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${userId}` }, () => { void refreshHistory() })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `sender_id=eq.${userId}` }, () => { void refreshHistory() })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${userId}` }, () => { void refreshHistory(); void refreshLatest() })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `sender_id=eq.${userId}` }, () => { void refreshHistory(); void refreshLatest() })
       .subscribe((status) => {
         if (cancelled) return
         setLiveStatus(status === 'SUBSCRIBED' ? 'Live updates connected' : 'Reconnecting. Checking for messages every 15 seconds.')
-        if (status === 'SUBSCRIBED') void refreshHistory()
+        if (status === 'SUBSCRIBED') { void refreshHistory(); void refreshLatest() }
       })
     void refreshHistory()
-    const timer = window.setInterval(() => { void refreshHistory() }, 15000)
-    function onFocus() { void refreshHistory() }
+    const timer = window.setInterval(() => { void refreshHistory(); void refreshLatest() }, 15000)
+    function onFocus() { void refreshHistory(); void refreshLatest() }
     window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
@@ -139,7 +173,7 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
       window.removeEventListener('focus', onFocus)
       void client.removeChannel(channel)
     }
-  }, [isOpen, memberId, userId])
+  }, [isOpen, memberId, userId, refreshLatest])
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -194,12 +228,11 @@ export default function Messages({ isOpen, userId, onClose }: MessagesProps) {
         {directoryStatus && <p className="chat-empty" role="status">{directoryStatus}</p>}
         {member && <div className="messages-layout">
           <aside className="conversation-list" aria-label="Registered students">
-            {members.map((item) => {
-              const thread = threads[item.id] ?? []
+            {orderedMembers.map((item) => {
               return (
                 <button key={item.id} className={`conversation-item ${item.id === member.id ? 'selected' : ''}`} type="button" aria-pressed={item.id === member.id} onClick={() => setSelectedMemberId(item.id)}>
                   <span className="chat-avatar" aria-hidden="true">{item.full_name[0]}</span>
-                  <span className="conversation-copy"><strong>{item.full_name}</strong><span>RPI student</span><small>{thread.at(-1)?.body ?? 'Start a pickup conversation'}</small></span>
+                  <span className="conversation-copy"><strong>{item.full_name}</strong><span>RPI student</span><small>{lastMessage(item.id)?.body ?? 'Start a pickup conversation'}</small></span>
                 </button>
               )
             })}
