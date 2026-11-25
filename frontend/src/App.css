@@ -44,6 +44,7 @@ h1 em { color: #ffd2d7; font-style: normal; }
 .welcome-copy { color: white; font-size: 16px; line-height: 1.55; max-width: 465px; }
 .trust-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 25px; }
 .trust-row span { color: white; font-family: 'Roboto Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+.schedule-panel { padding-top: 48px; }
 .category-section { padding-bottom: 39px; padding-top: 52px; }
 .section-heading, .listing-heading { align-items: end; display: flex; justify-content: space-between; }
 h2 { font-size: 29px; line-height: 1.1; margin-bottom: 0; }

@@ -7,6 +7,7 @@ import Auth from './Auth'
 import Profile, { SellerProfile, type Purchase, type PendingTransaction } from './Profile'
 import { useListingChanges } from './useListingChanges'
 import SmartSearchButton from './SmartSearchButton'
+import SchedulePanel from './SchedulePanel'
 import type { SmartFilters } from './lib/smartSearch'
 
 type Listing = {
@@ -588,6 +589,8 @@ function App() {
               </div>
             </section>
 
+            <SchedulePanel accessToken={session?.access_token ?? null} />
+
             <section className="category-section page-width" aria-label="Browse campus categories">
               <div className="section-heading">
                 <div>
@@ -818,9 +821,6 @@ function App() {
                 <option>Good condition</option>
                 <option>Fair</option>
               </select>
-            </label>
-            <label>Listing image
-              <input type="file" accept="image/*" onChange={(event) => setNewImage(event.target.files?.[0] ?? null)} />
             </label>
             {formError && <p role="alert">{formError}</p>}
             <div className="modal-actions">

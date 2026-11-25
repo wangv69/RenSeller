@@ -16,3 +16,5 @@ frontend/coverage/
 .coverage
 htmlcov/
 .pytest_cache/
+
+.env
