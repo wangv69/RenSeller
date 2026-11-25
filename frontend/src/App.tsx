@@ -580,6 +580,7 @@ function App() {
             onCancelPurchase={cancelPurchase}
             onRateSeller={rateSeller}
             rating={ratings[currentUserId ?? '']}
+            soldCount={listings.filter((listing) => listing.sellerId === currentUserId && listing.status === 'sold').length}
           />
         ) : currentPage === 'seller-profile' && selectedSellerId ? (
           <SellerProfile

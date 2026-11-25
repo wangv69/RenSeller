@@ -180,3 +180,24 @@ it('shows wallet balance and confirms or cancels pending purchases', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Rate seller 5 stars' }))
   expect(onRateSeller).toHaveBeenCalledWith('tx-1', 'seller-1', 5)
 })
+
+const ownProfile = (soldCount?: number) => render(<Profile onBack={vi.fn()} onToggleSaved={vi.fn()} onDeleteListing={vi.fn()} savedListings={[]} postedListings={[]} soldCount={soldCount} />)
+it.each([[12, '12 items sold'], [2, '2 items sold'], [1, '1 item sold']])('shows %i sold on your own profile as %j', async (count, text) => {
+  ownProfile(count)
+  await screen.findByRole('heading', { name: 'Profile' })
+  expect(screen.getByText(text)).toBeInTheDocument()
+})
+it.each([[0], [undefined]])('hides the sold count on your own profile when it is %s', async (count) => {
+  ownProfile(count)
+  await screen.findByRole('heading', { name: 'Profile' })
+  expect(screen.queryByText(/sold/)).not.toBeInTheDocument()
+})
+const sellerProfile = (sold: number) => render(<SellerProfile sellerName="Jordan Student" listings={[]} soldListings={Array.from({ length: sold }, (_, index) => ({ ...listing, id: 100 + index, title: `Sold item ${index}` }))} savedListings={[]} onBack={vi.fn()} />)
+it.each([[3, '3 items sold'], [1, '1 item sold']])('shows %i sold items on a seller profile as %j', (count, text) => {
+  sellerProfile(count)
+  expect(screen.getByText(text)).toBeInTheDocument()
+})
+it('hides the sold count on a seller profile with no sales', () => {
+  sellerProfile(0)
+  expect(screen.queryByText(/items? sold/)).not.toBeInTheDocument()
+})

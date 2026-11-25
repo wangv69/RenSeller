@@ -15,6 +15,7 @@ type ProfileProps = {
   onCancelPurchase?: (transactionId: string) => void
   onRateSeller?: (transactionId: string, sellerId: string, rating: number) => void
   rating?: { average: number; count: number }
+  soldCount?: number
 }
 
 export type Purchase = {
@@ -64,6 +65,8 @@ type Feedback = {
 
 const dormOptions = ['Barton Hall', 'Blitman Residence Commons', 'Bray Hall', 'BARH', 'Cary Hall', 'Crocket Hall', 'Davison/Nugent Hall', 'E-Complex', 'Hall Hall', 'Nason Hall', 'North Hall', 'Polytechnic Apartments', 'Quad', 'RAHP A', 'RAHP B', 'Sharp Hall', 'Stacwyck Apartments', 'Warren Hall']
 
+const soldLabel = (count: number) => `${count} ${count === 1 ? 'item' : 'items'} sold`
+
 export function SellerProfile({ sellerName, listings, profile, savedListings, soldListings = [], rating, onBack }: SellerProfileProps) {
   const purchases: Purchase[] = []
   const fullName = profile?.fullName || sellerName
@@ -79,7 +82,7 @@ export function SellerProfile({ sellerName, listings, profile, savedListings, so
       </div>
       <div className="profile-content">
         <section className="profile-panel profile-form">
-          <div className="profile-panel-heading"><div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName}</h2></div><strong>★ {rating ? rating.average.toFixed(1) : 'No ratings'} <span className="history-count">({rating?.count ?? 0} ratings)</span></strong></div>
+          <div className="profile-panel-heading"><div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName}</h2></div><strong>★ {rating ? rating.average.toFixed(1) : 'No ratings'} <span className="history-count">({rating?.count ?? 0} ratings)</span>{soldListings.length > 0 && <> · <span className="history-count">{soldLabel(soldListings.length)}</span></>}</strong></div>
           <div className="profile-form-grid"><p><strong>RPI email</strong><br />{email}</p><p><strong>Current dorm</strong><br />{dorm}</p></div>
         </section>
         <section className="profile-panel">
@@ -121,6 +124,7 @@ export default function Profile({
   onCancelPurchase,
   onRateSeller,
   rating,
+  soldCount = 0,
 }: ProfileProps) {
   const [profileImage, setProfileImage] = useState('')
   const [fullName, setFullName] = useState('')
@@ -257,7 +261,7 @@ export default function Profile({
           {activeSection === 'information' ? <>
             <div className="profile-panel profile-identity-panel">
               <div className="profile-picture-wrap"><div className="profile-picture">{profileImage ? <img src={profileImage} alt="Profile" /> : initial}</div><label className="upload-picture">Change picture<input type="file" accept="image/*" onChange={uploadProfileImage} /></label></div>
-              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p><p className="profile-username">★ {rating ? `${rating.average.toFixed(1)} · ${rating.count} ratings` : 'No ratings yet'}</p><p className="profile-wallet">${walletBalance.toFixed(2).replace(/\.00$/, '')}</p></div>
+              <div><p className="eyebrow">ACCOUNT DETAILS</p><h2>{fullName || username}</h2><p className="profile-username">@{username}</p><p className="profile-username">★ {rating ? `${rating.average.toFixed(1)} · ${rating.count} ratings` : 'No ratings yet'}</p>{soldCount > 0 && <p className="profile-username">{soldLabel(soldCount)}</p>}<p className="profile-wallet">${walletBalance.toFixed(2).replace(/\.00$/, '')}</p></div>
             </div>
 
             <form className="profile-panel profile-form" onSubmit={saveInformation}>

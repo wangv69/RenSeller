@@ -611,3 +611,23 @@ it('clears the course field after a listing is posted', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Sell an item/ }))
   expect(screen.getByLabelText(/Course/)).toHaveValue('')
 })
+
+const soldRows = [
+  { id: 1, name: 'Calculus book', price: 12, category: ['Textbooks'], condition: 'New', seller_id: 'user-1', image_path: null, status: 'active', profiles: null },
+  { id: 2, name: 'Desk lamp', price: 5, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, status: 'active', profiles: { display_name: 'Other student' } },
+  { id: 3, name: 'Old chair', price: 20, category: ['Furniture'], condition: 'Fair', seller_id: 'user-1', image_path: null, status: 'sold', profiles: null },
+  { id: 4, name: 'Old desk', price: 40, category: ['Furniture'], condition: 'Fair', seller_id: 'user-1', image_path: null, status: 'sold', profiles: null },
+  { id: 5, name: 'Old lamp', price: 8, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, status: 'sold', profiles: { display_name: 'Other student' } },
+  { id: 6, name: 'Held fan', price: 9, category: ['Furniture'], condition: 'Fair', seller_id: 'user-2', image_path: null, status: 'reserved', profiles: { display_name: 'Other student' } },
+]
+it("counts only completed sales on your profile and on a seller's profile", async () => {
+  listingsQuery.order.mockResolvedValue({ data: soldRows, error: null })
+  render(<App />)
+  const links = await screen.findAllByRole('button', { name: /Listed by Other student/ })
+  fireEvent.click(links[links.length - 1])
+  expect(await screen.findByText('1 item sold')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '← Back to listings' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Account' }))
+  await screen.findByRole('heading', { name: 'Profile' })
+  expect(screen.getByText('2 items sold')).toBeInTheDocument()
+})
